@@ -17,6 +17,7 @@ public class MessageConstants {
     public static final String USER_PASSWORD_WRONG = "Usuario o Contraseña Incorrecta";
     public static final String ORDER_NOT_FINISHED = "La orden %s no se encuentra finalizada, por favor hablale a %s " +
             "para que la finalize. Recuerda que una orden sin finalizar no puede ser facturada.";
+    public static final String STOCK_NOT_AVAILABLE = "No hay stock disponible para el producto: ";
 
 
 }

@@ -13,6 +13,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping(value = "/api/product", produces = MediaType.APPLICATION_JSON_VALUE)
 public class ProductController extends GenericController<ProductDto, ProductService> {
@@ -31,10 +33,22 @@ public class ProductController extends GenericController<ProductDto, ProductServ
     }
 
     @GetMapping("/findByBarcode/{barcode}")
-    public ResponseEntity<ProductDto> findByBarcode(@PathVariable String barcode) {
+    public ResponseEntity<?> findByBarcode(@PathVariable String barcode) {
         logger.info("ProductController -> findByBarcode");
         logger.info("{}", loginUserService.getUserLoginContext());
-        return ResponseEntity.ok(service.findByBarcode(barcode));
+        try {
+            ProductDto product = service.findByPresentationsBarcode(barcode);
+            if (product == null) {
+                logger.warn("ProductController -> findByBarcode -> Producto no encontrado: {}", barcode);
+                return ResponseEntity.status(404)
+                        .body(Map.of("message", "El producto consultado no se encuentra registrado."));
+            }
+            return ResponseEntity.ok(product);
+        } catch (Exception ex) {
+            logger.error("ProductController -> findByBarcode -> Error interno del servidor: {}", ex.getMessage(), ex);
+            return ResponseEntity.status(500)
+                    .body(Map.of("message", "Ocurrió un error interno en el servidor."));
+        }
     }
 
     @GetMapping("/paginate")

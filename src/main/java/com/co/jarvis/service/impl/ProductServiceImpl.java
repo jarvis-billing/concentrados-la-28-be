@@ -36,28 +36,6 @@ public class ProductServiceImpl implements ProductService {
     PaginationMapper<Product, ProductDto> paginationMapper = new PaginationMapper<>(Product.class, ProductDto.class);
 
     @Override
-    public ProductDto findByBarcode(String barcode) {
-        log.info("ProductServiceImpl -> findByBarcode");
-        try {
-            validateBarcode(barcode);
-            Product entity = repository.findByBarcode(barcode);
-            if (entity == null) {
-                throw new ResourceNotFoundException(MessageConstants.PRODUCT_NOT_FOUND + barcode);
-            }
-            return mapper.mapToDto(entity);
-        } catch (NotBarcodeException e) {
-            logger.error("ProductServiceImpl -> findByBarcode -> Error: Barcode empty");
-            throw new NotBarcodeException(e.getMessage());
-        }  catch (ResourceNotFoundException e) {
-            logger.error("ProductServiceImpl -> findByBarcode -> Error: Product not Found");
-            throw new ResourceNotFoundException(e.getMessage());
-        } catch (Exception e) {
-            logger.error("ProductServiceImpl -> findByBarcode -> Ocurrio un error en la busqueda del producto");
-            throw new GenericInternalException(MessageConstants.GENERIC_ERROR);
-        }
-    }
-
-    @Override
     public PaginationDto<ProductDto> findAllPage(int pageNumber, int pageSize) {
         log.info("ProductServiceImpl -> findAllPage");
         Pageable pageable = PageRequest.of(pageNumber, pageSize);
@@ -69,7 +47,7 @@ public class ProductServiceImpl implements ProductService {
     public PaginationDto<ProductDto> findAllPageSearch(int pageNumber, int pageSize, String search) {
         log.info("ProductServiceImpl -> findAllPageSearch");
         Pageable pageable = PageRequest.of(pageNumber, pageSize);
-        Page<Product> pageProduct = repository.findByBarcodeOrDescriptionContainingIgnoreCase(search, search, pageable);
+        Page<Product> pageProduct = repository.findByPresentationsBarcodeOrDescriptionContainingIgnoreCase(search, search, pageable);
         return paginationMapper.pageToPagination(pageProduct);
     }
 
@@ -77,14 +55,32 @@ public class ProductServiceImpl implements ProductService {
     public void updatePriceByIds(BigDecimal price, List<String> ids) {
         log.info("ProductServiceImpl -> updatePriceByIds");
         List<Product> products = repository.findAllById(ids);
-        products.forEach(x -> x.setPrice(price));
+        //products.forEach(product -> product..setPrice(price));
         repository.saveAll(products);
     }
 
-    private static void validateBarcode(String barcode) {
-        if (barcode == null || barcode.trim().equalsIgnoreCase("")){
-            throw new NotBarcodeException(MessageConstants.NOT_BARCODE);
+    @Override
+    public ProductDto findByPresentationsBarcode(String barcode) {
+        Product product = repository.findByPresentationsBarcode(barcode);
+        return product != null ? mapper.mapToDto(product) : null;
+    }
+
+    @Override
+    public void decreaseStock(Product product, BigDecimal amount) {
+        if (product == null) {
+            throw new ResourceNotFoundException(MessageConstants.RESOURCE_NOT_FOUND);
         }
+        product.reduceStock(amount);
+        repository.save(product);
+    }
+
+    @Override
+    public void increaseStock(Product product, BigDecimal amount) {
+        if (product == null) {
+            throw new ResourceNotFoundException(MessageConstants.RESOURCE_NOT_FOUND);
+        }
+        product.increaseStock(amount);
+        repository.save(product);
     }
 
     @Override
@@ -103,7 +99,7 @@ public class ProductServiceImpl implements ProductService {
     public ProductDto save(ProductDto dto) {
         log.info("ProductServiceImpl -> save");
         try {
-            existBarcode(dto.getBarcode());
+            //existBarcode(dto.getBarcode());
             Product entityBd = mapper.mapToEntity(dto);
             entityBd = repository.save(entityBd);
             return mapper.mapToDto(entityBd);
@@ -131,16 +127,13 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public ProductDto update(ProductDto dto, String id) {
+    public ProductDto update(ProductDto dto, String barcode) {
         log.info("ProductServiceImpl -> update");
         try {
-            Optional<Product> opEntity = repository.findById(id);
-            Product entity = opEntity.orElseThrow(()
+            Product product = Optional.ofNullable(repository.findByPresentationsBarcode(barcode)).orElseThrow(()
                     -> new ResourceNotFoundException(MessageConstants.RESOURCE_NOT_FOUND));
-            if (!entity.getId().equalsIgnoreCase(dto.getId())) {
-                validateProductExist(entity.getBarcode());
-            }
-            return updatePresent(dto, entity.getId());
+
+            return updatePresent(dto, product.getId());
         } catch (ResourceNotFoundException e) {
             log.error("ProductServiceImpl -> update -> ERROR: {}", e.getMessage());
             throw new ResourceNotFoundException(MessageConstants.RESOURCE_NOT_FOUND, e);
@@ -153,25 +146,11 @@ public class ProductServiceImpl implements ProductService {
         }
     }
 
-    private void validateProductExist(String id) {
-        Optional<Product> product = repository.findById(id);
-        if (product.isPresent()) {
-            throw new DuplicateRecordException(MessageConstants.DUPLICATE_RECORD_ERROR);
-        }
-    }
-
-    private void existBarcode(String barcode) {
-        Product product = repository.findByBarcode(barcode);
-        if (product != null) {
-            update(mapper.mapToDto(product), product.getId());
-        }
-    }
-
     private ProductDto updatePresent(ProductDto dto, String id) {
         log.info("ProductServiceImpl -> updatePresent");
-        Product entity = mapper.mapToEntity(dto);
-        entity.setId(id);
-        entity = repository.save(entity);
-        return mapper.mapToDto(entity);
+        Product product = mapper.mapToEntity(dto);
+        product.setId(id);
+        product = repository.save(product);
+        return mapper.mapToDto(product);
     }
 }

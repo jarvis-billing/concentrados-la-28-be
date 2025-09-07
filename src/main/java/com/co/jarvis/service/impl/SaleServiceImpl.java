@@ -64,6 +64,8 @@ public class SaleServiceImpl implements SaleService {
     @Autowired
     private MongoTemplate mongoTemplate;
 
+    @Autowired
+    private ProductService productService;
 
     GenericMapper<Billing, BillingDto> mapper
             = new GenericMapper<>(Billing.class, BillingDto.class);
@@ -342,13 +344,9 @@ public class SaleServiceImpl implements SaleService {
                 SaleDetailDto saleDetailDto = SaleDetailDto.builder()
                         .product(ProductApi.builder()
                                 .id(product.getId())
-                                .barcode(product.getBarcode())
                                 .description(product.getDescription())
                                 .vatType(product.getVatType())
                                 .build())
-                        .amount(product.getAmount())
-                        .unitPrice(product.getPrice())
-                        .subTotal(product.getTotalValue())
                         .totalVat(getTotalIvaSale(product))
                         .build();
                 lstSaleDetailDto.add(saleDetailDto);
@@ -374,7 +372,7 @@ public class SaleServiceImpl implements SaleService {
             ProductVatTypeDto productIva = productVatTypeService.findByTipoIva(vatValue);
             BigDecimal iva = productIva.getPercentage().divide(new BigDecimal("100"));
 
-            BigDecimal valorTotal = product.getTotalValue();
+            BigDecimal valorTotal = BigDecimal.ONE;
             return valorTotal.multiply(iva);
         }
         return BigDecimal.ZERO;

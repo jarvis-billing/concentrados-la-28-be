@@ -1,5 +1,5 @@
 package com.co.jarvis.enums;
 
 public enum ESale {
-    WEIGHT, UNIT
+    WEIGHT, UNIT, LONGITUDE, VOLUME, OTHER;
 }

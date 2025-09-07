@@ -1,18 +1,18 @@
 package com.co.jarvis.entity;
 
-import com.co.jarvis.enums.EVat;
 import com.co.jarvis.enums.ESale;
+import com.co.jarvis.enums.EVat;
+import com.co.jarvis.util.mensajes.MessageConstants;
 import jakarta.persistence.Id;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.mongodb.core.mapping.Document;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.math.BigDecimal;
 import java.util.List;
-
-import static com.co.jarvis.enums.ESale.UNIT;
 
 @NoArgsConstructor
 @AllArgsConstructor
@@ -24,46 +24,34 @@ public class Product {
     @Id
     private String id;
     private String description;
-    private BigDecimal price;
-    private BigDecimal amount;
-    private BigDecimal totalValue;
+    @Field("sale_type")
     private ESale saleType;
-    private BigDecimal stockKg;
-    private BigDecimal stockUnit;
     private String brand;
+    @Field("product_code")
     private String productCode;
+    @Field("category")
     private String category;
     private BigDecimal vatValue;
     private EVat vatType;
-    private BigDecimal cost;
     private List<Presentation> presentations;
+    private Stock stock;
 
     public boolean hasStock(BigDecimal amount) {
-        if (saleType == UNIT) {
-            return stockUnit.compareTo(amount) >= 0;
-        }
-        return stockKg.compareTo(amount) >= 0;
+        return stock.getQuantity().compareTo(amount) >= 0;
     }
 
     // Reduce el stock
     public void reduceStock(BigDecimal amount) {
         if (!hasStock(amount)) {
-            throw new IllegalArgumentException("No hay stock suficiente");
+            org.slf4j.LoggerFactory.getLogger(Product.class)
+                    .warn(MessageConstants.STOCK_NOT_AVAILABLE + this.description);
         }
-        if (saleType == UNIT) {
-            stockUnit = stockUnit.subtract(amount);
-            return;
-        }
-        stockKg = stockKg.subtract(amount);
+        stock.setQuantity(stock.getQuantity().subtract(amount));
     }
 
     // Aumenta el stock
     public void increaseStock(BigDecimal amount) {
-        if (saleType == UNIT) {
-            stockUnit = stockUnit.add(amount);
-            return;
-        }
-        stockKg = stockKg.add(amount);
+        stock.setQuantity(stock.getQuantity().add(amount));
     }
 
 }

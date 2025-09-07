@@ -1,5 +1,7 @@
 package com.co.jarvis.dto;
 
+import com.co.jarvis.entity.Presentation;
+import com.co.jarvis.entity.Stock;
 import com.co.jarvis.enums.EVat;
 import com.co.jarvis.enums.ESale;
 import lombok.AllArgsConstructor;
@@ -9,6 +11,7 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 @Builder
@@ -17,18 +20,14 @@ import java.math.BigDecimal;
 public class ProductDto implements Serializable {
 
     private String id;
-    private String barcode;
     private String description;
-    private BigDecimal price;
-    private BigDecimal amount;
-    private BigDecimal totalValue;
     private ESale saleType;
-    private BigDecimal currentStock;
-    private BigDecimal minStock;
     private String brand;
-    private String pluCode;
-    private CategoryDto category;
+    private String category;
+    private String productCode;
+    private List<Presentation> presentations;
+    private Stock stock;
     private BigDecimal vatValue;
     private EVat vatType;
-    private BigDecimal cost;
+
 }

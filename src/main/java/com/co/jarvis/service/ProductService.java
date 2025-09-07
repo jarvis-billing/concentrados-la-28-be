@@ -10,11 +10,15 @@ import java.util.List;
 
 public interface ProductService extends BaseService<ProductDto> {
 
-    ProductDto findByBarcode(String barcode);
-
     PaginationDto<ProductDto> findAllPage(int pageNumber, int pageSize);
 
     PaginationDto<ProductDto> findAllPageSearch(int pageNumber, int pageSize, String search);
 
     void updatePriceByIds(BigDecimal price, List<String> ids);
+
+    ProductDto findByPresentationsBarcode(String barcode);
+
+    void decreaseStock(Product product, BigDecimal amount);
+
+    void increaseStock(Product product, BigDecimal amount);
 }

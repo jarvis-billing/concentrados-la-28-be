@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.math.BigDecimal;
 
@@ -14,10 +15,15 @@ import java.math.BigDecimal;
 @Builder
 public class Presentation {
     private String barcode;
+    @Field("product_code")
     private String productCode;
     private String label;
-    private BigDecimal weightKg;
-    private BigDecimal price;
-    private BigDecimal cost;
+    @Field("sale_price")
+    private BigDecimal salePrice;
+    @Field("cost_price")
+    private BigDecimal costPrice;
+    @Field("unit_of_measure")
     private UnitMeasure unitMeasure;
+    @Field("conversion_factor")
+    private BigDecimal conversionFactor;
 }
