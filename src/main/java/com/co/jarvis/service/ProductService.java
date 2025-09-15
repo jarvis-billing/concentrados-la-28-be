@@ -21,4 +21,9 @@ public interface ProductService extends BaseService<ProductDto> {
     void decreaseStock(Product product, BigDecimal amount);
 
     void increaseStock(Product product, BigDecimal amount);
+
+    String validateOrGenerateBarcode(String barcode);
+
+    String generateNextProductCode();
+
 }

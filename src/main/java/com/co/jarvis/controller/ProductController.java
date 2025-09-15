@@ -3,6 +3,7 @@ package com.co.jarvis.controller;
 import com.co.jarvis.dto.PaginationDto;
 import com.co.jarvis.dto.ProductDto;
 import com.co.jarvis.dto.ProductPriceDto;
+import com.co.jarvis.service.CatalogService;
 import com.co.jarvis.service.ProductService;
 import com.co.jarvis.service.impl.LoginUserService;
 import jakarta.validation.Valid;
@@ -26,6 +27,9 @@ public class ProductController extends GenericController<ProductDto, ProductServ
 
     @Autowired
     private LoginUserService loginUserService;
+
+    @Autowired
+    private CatalogService catalogService;
 
     @Override
     protected ProductService getService() {
@@ -67,7 +71,7 @@ public class ProductController extends GenericController<ProductDto, ProductServ
             @PathVariable String search
     ) {
         logger.info("ProductController -> findAllPageSearch");
-        return ResponseEntity.ok(service.findAllPageSearch(pageNumber, pageSize,search));
+        return ResponseEntity.ok(service.findAllPageSearch(pageNumber, pageSize, search));
     }
 
     @PostMapping("/updatePrice")
@@ -75,5 +79,18 @@ public class ProductController extends GenericController<ProductDto, ProductServ
         logger.info("BaseController -> save");
         getService().updatePriceByIds(dto.getPrice(), dto.getIds());
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping(value = "/validateOrGenerateBarcode", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, String>> validateOrGenerateBarcode(@RequestParam(required = false) String barcode) {
+        logger.info("ProductController -> validateOrGenerateBarcode");
+        String validBarcode = service.validateOrGenerateBarcode(barcode);
+        return ResponseEntity.ok(Map.of("barcode", validBarcode));
+    }
+
+    @GetMapping(value = "/generatedProductCode", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, String>> generatedProductCode() {
+        logger.info("ProductController -> generatedProductCode");
+        return ResponseEntity.ok(Map.of("value", service.generateNextProductCode()));
     }
 }

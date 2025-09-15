@@ -2,10 +2,14 @@ package com.co.jarvis.service.impl;
 
 import com.co.jarvis.dto.PaginationDto;
 import com.co.jarvis.dto.ProductDto;
+import com.co.jarvis.entity.Presentation;
 import com.co.jarvis.entity.Product;
 import com.co.jarvis.repository.ProductRepository;
 import com.co.jarvis.service.ProductService;
-import com.co.jarvis.util.exception.*;
+import com.co.jarvis.util.exception.DeleteRecordException;
+import com.co.jarvis.util.exception.DuplicateRecordException;
+import com.co.jarvis.util.exception.ResourceNotFoundException;
+import com.co.jarvis.util.exception.SaveRecordException;
 import com.co.jarvis.util.mappers.GenericMapper;
 import com.co.jarvis.util.mappers.PaginationMapper;
 import com.co.jarvis.util.mensajes.MessageConstants;
@@ -13,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -23,11 +28,16 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
+import static java.lang.String.format;
+
 @Service
 @Slf4j
 public class ProductServiceImpl implements ProductService {
 
     private static final Logger logger = LoggerFactory.getLogger(ProductServiceImpl.class);
+
+    @Value("${barcode.start.digit}")
+    private String barcodeStartDigit;
 
     @Autowired
     private ProductRepository repository;
@@ -81,6 +91,55 @@ public class ProductServiceImpl implements ProductService {
         }
         product.increaseStock(amount);
         repository.save(product);
+    }
+
+    @Override
+    public String validateOrGenerateBarcode(String barcode) {
+        // Verifica si el barcode existe
+        ProductDto product = null;
+        if (barcode != null && !barcode.isEmpty()) {
+            product = findByPresentationsBarcode(barcode);
+        }
+
+        if (product != null) {
+            Presentation presentation = product.getPresentations().stream()
+                    .filter(p -> p.getBarcode().equals(barcode)).findFirst()
+                    .orElse(null);
+            assert presentation != null;
+            throw new DuplicateRecordException(format(
+                    "El código de barras %s ya existe. Está assignation al producto: %s en la presentacion: %s", barcode,
+                    product.getDescription(), presentation.getLabel()));
+        }
+
+        String lastBarcode = findLastBarcodeStartingWithConfiguredDigit();
+        int nextNumber = 2800; // Valor inicial si no existe ninguno
+        if (lastBarcode != null && lastBarcode.startsWith(barcodeStartDigit) && lastBarcode.length() == 4) {
+            nextNumber = Integer.parseInt(lastBarcode) + 1;
+        }
+
+        return format("%04d", nextNumber);
+    }
+
+    @Override
+    public String generateNextProductCode() {
+        Product product = repository.findTopByOrderByProductCodeDesc();
+        String nextCode = "P001"; // Valor inicial si no existe ninguno
+
+        if (product != null && product.getProductCode() != null) {
+            try {
+                String currentNumber = product.getProductCode().substring(1); // Elimina la 'P'
+                int nextNumber = Integer.parseInt(currentNumber) + 1;
+                nextCode = String.format("P%03d", nextNumber); // Formato P seguido de 3 dígitos
+            } catch (NumberFormatException | IndexOutOfBoundsException e) {
+                logger.warn("El código de producto no tiene el formato correcto: {}", product.getProductCode());
+            }
+        }
+        return nextCode;
+    }
+
+    private String findLastBarcodeStartingWithConfiguredDigit() {
+        Product product = repository.findTopByOrderByPresentationsBarcodeDesc();
+        return product != null ? product.getPresentations().get(0).getBarcode() : null;
     }
 
     @Override

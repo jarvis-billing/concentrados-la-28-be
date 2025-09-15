@@ -1,10 +1,12 @@
 package com.co.jarvis.util.exception;
 
+import com.co.jarvis.util.exception.model.ErrorResponse;
 import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.stream.Collectors;
@@ -38,8 +40,9 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(DuplicateRecordException.class)
-    public ResponseEntity<Object> handleSaveRecordException(DuplicateRecordException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ResponseEntity<ErrorResponse> handleDuplicateRecordException(DuplicateRecordException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getErrorResponse());
     }
 
     @ExceptionHandler(UserNotFoundException.class)
