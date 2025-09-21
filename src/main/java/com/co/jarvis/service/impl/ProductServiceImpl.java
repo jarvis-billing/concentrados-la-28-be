@@ -159,9 +159,9 @@ public class ProductServiceImpl implements ProductService {
         log.info("ProductServiceImpl -> save");
         try {
             //existBarcode(dto.getBarcode());
-            Product entityBd = mapper.mapToEntity(dto);
-            entityBd = repository.save(entityBd);
-            return mapper.mapToDto(entityBd);
+            Product product = mapper.mapToEntity(dto);
+            product = repository.save(product);
+            return mapper.mapToDto(product);
         } catch (DuplicateRecordException e) {
             log.error("ProductServiceImpl -> save -> ERROR: {}", e.getMessage());
             throw new DuplicateRecordException(e.getMessage());
