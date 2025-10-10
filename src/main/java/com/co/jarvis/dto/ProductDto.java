@@ -29,5 +29,6 @@ public class ProductDto implements Serializable {
     private Stock stock;
     private BigDecimal vatValue;
     private EVat vatType;
+    private DisplayStock displayStock;
 
 }

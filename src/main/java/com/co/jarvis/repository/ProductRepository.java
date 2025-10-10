@@ -22,10 +22,14 @@ public interface ProductRepository extends MongoRepository<Product, String> {
     Product findByPresentationsBarcode(String barcode);
 
     @Aggregation(pipeline = {
-            "{ $sort: { 'presentations.barcode': -1 } }",
-            "{ $limit: 1 }"
+            "{ $unwind: '$presentations' }",
+            "{ $match: { 'presentations.barcode': { $regex: '^[0-9]+$' } } }", // Solo barcodes numéricos
+            "{ $addFields: { 'presentations.barcodeAsNumber': { $toInt: '$presentations.barcode' } } }",
+            "{ $sort: { 'presentations.barcodeAsNumber': -1 } }",
+            "{ $limit: 1 }",
+            "{ $project: { 'barcode': '$presentations.barcode' } }"
     })
-    Product findTopByOrderByPresentationsBarcodeDesc();
+    String findHighestBarcodeAsString();
 
     @Aggregation(pipeline = {
             "{ $sort: { 'productCode': -1 } }",

@@ -1,11 +1,14 @@
 package com.co.jarvis.service.impl;
 
+import com.co.jarvis.dto.DisplayStock;
 import com.co.jarvis.dto.PaginationDto;
 import com.co.jarvis.dto.ProductDto;
 import com.co.jarvis.entity.Presentation;
 import com.co.jarvis.entity.Product;
+import com.co.jarvis.enums.ESale;
 import com.co.jarvis.repository.ProductRepository;
 import com.co.jarvis.service.ProductService;
+import com.co.jarvis.util.UnitConverter;
 import com.co.jarvis.util.exception.DeleteRecordException;
 import com.co.jarvis.util.exception.DuplicateRecordException;
 import com.co.jarvis.util.exception.ResourceNotFoundException;
@@ -25,7 +28,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 import static java.lang.String.format;
@@ -50,7 +57,17 @@ public class ProductServiceImpl implements ProductService {
         log.info("ProductServiceImpl -> findAllPage");
         Pageable pageable = PageRequest.of(pageNumber, pageSize);
         Page<Product> pageProduct = repository.findAll(pageable);
-        return paginationMapper.pageToPagination(pageProduct);
+        PaginationDto<ProductDto> pagination = paginationMapper.pageToPagination(pageProduct);
+        
+        // Enriquecer cada producto con displayStock
+        if (pagination.getContent() != null) {
+            pagination.getContent().forEach(dto -> {
+                Product product = mapper.mapToEntity(dto);
+                dto.setDisplayStock(computeDisplayStock(product));
+            });
+        }
+        
+        return pagination;
     }
 
     @Override
@@ -58,7 +75,17 @@ public class ProductServiceImpl implements ProductService {
         log.info("ProductServiceImpl -> findAllPageSearch");
         Pageable pageable = PageRequest.of(pageNumber, pageSize);
         Page<Product> pageProduct = repository.findByPresentationsBarcodeOrDescriptionContainingIgnoreCase(search, search, pageable);
-        return paginationMapper.pageToPagination(pageProduct);
+        PaginationDto<ProductDto> pagination = paginationMapper.pageToPagination(pageProduct);
+        
+        // Enriquecer cada producto con displayStock
+        if (pagination.getContent() != null) {
+            pagination.getContent().forEach(dto -> {
+                Product product = mapper.mapToEntity(dto);
+                dto.setDisplayStock(computeDisplayStock(product));
+            });
+        }
+        
+        return pagination;
     }
 
     @Override
@@ -72,7 +99,7 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public ProductDto findByPresentationsBarcode(String barcode) {
         Product product = repository.findByPresentationsBarcode(barcode);
-        return product != null ? mapper.mapToDto(product) : null;
+        return product != null ? enrichProductDto(product) : null;
     }
 
     @Override
@@ -95,29 +122,66 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public String validateOrGenerateBarcode(String barcode) {
-        // Verifica si el barcode existe
-        ProductDto product = null;
-        if (barcode != null && !barcode.isEmpty()) {
-            product = findByPresentationsBarcode(barcode);
-        }
+        // Validación y generación robusta del código de barras
+        try {
+            if (barcode != null && !barcode.isBlank()) {
+                String trimmed = barcode.trim();
 
-        if (product != null) {
-            Presentation presentation = product.getPresentations().stream()
-                    .filter(p -> p.getBarcode().equals(barcode)).findFirst()
-                    .orElse(null);
-            assert presentation != null;
-            throw new DuplicateRecordException(format(
-                    "El código de barras %s ya existe. Está assignation al producto: %s en la presentacion: %s", barcode,
-                    product.getDescription(), presentation.getLabel()));
-        }
+                // Validación de formato: 4 dígitos numéricos
+                if (!trimmed.matches("\\d{4}")) {
+                    throw new SaveRecordException("El código de barras debe ser numérico de 4 dígitos.");
+                }
 
-        String lastBarcode = findLastBarcodeStartingWithConfiguredDigit();
-        int nextNumber = 2800; // Valor inicial si no existe ninguno
-        if (lastBarcode != null && lastBarcode.startsWith(barcodeStartDigit) && lastBarcode.length() == 4) {
-            nextNumber = Integer.parseInt(lastBarcode) + 1;
-        }
+                // Validación: debe iniciar con el dígito configurado
+                if (!trimmed.startsWith(barcodeStartDigit)) {
+                    throw new SaveRecordException(format("El código de barras debe iniciar con '%s'.", barcodeStartDigit));
+                }
 
-        return format("%04d", nextNumber);
+                // Verificar unicidad: si ya existe, lanzar excepción
+                ProductDto existing = findByPresentationsBarcode(trimmed);
+                if (existing != null) {
+                    Presentation presentation = existing.getPresentations().stream()
+                            .filter(p -> Objects.equals(trimmed, p.getBarcode()))
+                            .findFirst()
+                            .orElse(null);
+                    String presentLabel = presentation != null ? presentation.getLabel() : "N/A";
+                    throw new DuplicateRecordException(format(
+                            "El código de barras %s ya existe. Está asignado al producto: %s en la presentación: %s",
+                            trimmed, existing.getDescription(), presentLabel));
+                }
+
+                // Si pasó todas las validaciones y no existe, retornarlo
+                return trimmed;
+            }
+
+            // Si no se envía barcode, generar el siguiente automáticamente
+            String lastBarcode = findLastBarcodeStartingWithConfiguredDigit();
+            int baseNumber;
+            try {
+                baseNumber = Integer.parseInt(barcodeStartDigit + "00");
+            } catch (NumberFormatException e) {
+                logger.warn("Configuración 'barcodeStartDigit' no numérica: {}", barcodeStartDigit);
+                baseNumber = 2800; // Fallback seguro
+            }
+
+            int nextNumber = baseNumber;
+            if (lastBarcode != null && !lastBarcode.isEmpty() && lastBarcode.matches("\\d{4}")) {
+                try {
+                    int currentNumber = Integer.parseInt(lastBarcode);
+                    nextNumber = currentNumber + 1;
+                } catch (NumberFormatException e) {
+                    logger.warn("El último barcode no es numérico válido: {}", lastBarcode);
+                    nextNumber = baseNumber;
+                }
+            }
+
+            return format("%04d", nextNumber);
+        } catch (DuplicateRecordException | SaveRecordException e) {
+            throw e;
+        } catch (Exception e) {
+            logger.error("Error en validateOrGenerateBarcode: {}", e.getMessage(), e);
+            throw new SaveRecordException("Error validando/generando el código de barras.");
+        }
     }
 
     @Override
@@ -138,20 +202,26 @@ public class ProductServiceImpl implements ProductService {
     }
 
     private String findLastBarcodeStartingWithConfiguredDigit() {
-        Product product = repository.findTopByOrderByPresentationsBarcodeDesc();
-        return product != null ? product.getPresentations().get(0).getBarcode() : null;
+        String barcode = repository.findHighestBarcodeAsString();
+        if (barcode != null && barcode.startsWith(barcodeStartDigit)) {
+            return barcode;
+        }
+        return null;
     }
 
     @Override
     public List<ProductDto> findAll() {
         log.info("ProductServiceImpl -> findAll");
-        return mapper.mapToDtoList(repository.findAll());
+        List<Product> products = repository.findAll();
+        return products.stream()
+            .map(this::enrichProductDto)
+            .toList();
     }
 
     @Override
     public ProductDto findById(String id) {
         Optional<Product> producto = repository.findById(id);
-        return producto.map(product -> mapper.mapToDto(product)).orElse(null);
+        return producto.map(this::enrichProductDto).orElse(null);
     }
 
     @Override
@@ -161,7 +231,7 @@ public class ProductServiceImpl implements ProductService {
             //existBarcode(dto.getBarcode());
             Product product = mapper.mapToEntity(dto);
             product = repository.save(product);
-            return mapper.mapToDto(product);
+            return enrichProductDto(product);
         } catch (DuplicateRecordException e) {
             log.error("ProductServiceImpl -> save -> ERROR: {}", e.getMessage());
             throw new DuplicateRecordException(e.getMessage());
@@ -210,6 +280,141 @@ public class ProductServiceImpl implements ProductService {
         Product product = mapper.mapToEntity(dto);
         product.setId(id);
         product = repository.save(product);
-        return mapper.mapToDto(product);
+        return enrichProductDto(product);
+    }
+
+    /**
+     * Enriquece un ProductDto con el displayStock calculado
+     */
+    private ProductDto enrichProductDto(Product product) {
+        ProductDto dto = mapper.mapToDto(product);
+        dto.setDisplayStock(computeDisplayStock(product));
+        return dto;
+    }
+
+    @Override
+    public DisplayStock computeDisplayStock(Product product) {
+        log.info("ProductServiceImpl -> computeDisplayStock");
+        
+        if (product == null || product.getStock() == null) {
+            return buildEmptyDisplayStock();
+        }
+
+        ESale saleType = product.getSaleType();
+        String kind = determineKind(saleType);
+        String unitBase = determineBaseUnit(kind, product.getStock().getUnitMeasure());
+        
+        // Convertir cantidad de stock a unidad base
+        BigDecimal qty = UnitConverter.toBase(
+            product.getStock().getQuantity() != null ? product.getStock().getQuantity() : BigDecimal.ZERO,
+            product.getStock().getUnitMeasure(),
+            unitBase
+        );
+        
+        // Si qty es negativo o cero, tratarlo como 0
+        if (qty.compareTo(BigDecimal.ZERO) < 0) {
+            qty = BigDecimal.ZERO;
+        }
+
+        // Si no es WEIGHT ni LONGITUDE, retornar stock simple
+        if (kind == null) {
+            return DisplayStock.builder()
+                .kind(null)
+                .packSize(null)
+                .packs(null)
+                .remainder(null)
+                .unit(unitBase)
+                .label(format("%s %s", qty.stripTrailingZeros().toPlainString(), unitBase))
+                .computedAt(Instant.now().toString())
+                .build();
+        }
+
+        // Buscar el packSize (mayor fixedAmount de presentaciones con isFixedAmount=true)
+        BigDecimal packSize = findLargestPackSize(product, unitBase);
+        
+        if (packSize == null || packSize.compareTo(BigDecimal.ZERO) <= 0) {
+            // No hay presentaciones fijas válidas
+            return DisplayStock.builder()
+                .kind(kind)
+                .packSize(null)
+                .packs(null)
+                .remainder(null)
+                .unit(unitBase)
+                .label(format("%s %s", qty.stripTrailingZeros().toPlainString(), unitBase))
+                .computedAt(Instant.now().toString())
+                .build();
+        }
+
+        // Calcular packs y remainder
+        int packs = qty.divide(packSize, 0, RoundingMode.DOWN).intValue();
+        BigDecimal remainder = qty.subtract(packSize.multiply(new BigDecimal(packs)));
+        remainder = UnitConverter.round(remainder, 3);
+
+        // Construir label
+        String noun = "WEIGHT".equals(kind) ? "bultos" : "rollos";
+        String label = format("%d %s + %s %s", 
+            packs, 
+            noun, 
+            remainder.stripTrailingZeros().toPlainString(), 
+            unitBase
+        );
+
+        return DisplayStock.builder()
+            .kind(kind)
+            .packSize(packSize)
+            .packs(packs)
+            .remainder(remainder)
+            .unit(unitBase)
+            .label(label)
+            .computedAt(Instant.now().toString())
+            .build();
+    }
+
+    private String determineKind(ESale saleType) {
+        if (saleType == null) {
+            return null;
+        }
+        return switch (saleType) {
+            case WEIGHT -> "WEIGHT";
+            case LONGITUDE -> "LONGITUDE";
+            default -> null;
+        };
+    }
+
+    private String determineBaseUnit(String kind, com.co.jarvis.enums.UnitMeasure stockUnit) {
+        if (kind == null) {
+            return stockUnit != null ? stockUnit.getSigma() : "";
+        }
+        return switch (kind) {
+            case "WEIGHT" -> "kg";
+            case "LONGITUDE" -> "cm";
+            default -> stockUnit != null ? stockUnit.getSigma() : "";
+        };
+    }
+
+    private BigDecimal findLargestPackSize(Product product, String unitBase) {
+        if (product.getPresentations() == null || product.getPresentations().isEmpty()) {
+            return null;
+        }
+
+        return product.getPresentations().stream()
+            .filter(p -> Boolean.TRUE.equals(p.getIsFixedAmount()))
+            .filter(p -> p.getFixedAmount() != null && p.getFixedAmount().compareTo(BigDecimal.ZERO) > 0)
+            .map(p -> UnitConverter.toBase(p.getFixedAmount(), p.getUnitMeasure(), unitBase))
+            .filter(v -> v.compareTo(BigDecimal.ZERO) > 0)
+            .max(Comparator.naturalOrder())
+            .orElse(null);
+    }
+
+    private DisplayStock buildEmptyDisplayStock() {
+        return DisplayStock.builder()
+            .kind(null)
+            .packSize(null)
+            .packs(null)
+            .remainder(null)
+            .unit("")
+            .label("0")
+            .computedAt(Instant.now().toString())
+            .build();
     }
 }

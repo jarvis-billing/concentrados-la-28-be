@@ -24,6 +24,11 @@ public class Presentation {
     private BigDecimal costPrice;
     @Field("unit_of_measure")
     private UnitMeasure unitMeasure;
-    @Field("conversion_factor")
-    private BigDecimal conversionFactor;
+    @Field("is_bulk")
+    private Boolean isBulk;
+    @Field("is_fixed_amount")
+    private Boolean isFixedAmount;
+    @Field("fixed_amount")
+    private BigDecimal fixedAmount;
+
 }
