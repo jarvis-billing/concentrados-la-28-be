@@ -2,6 +2,7 @@ package com.co.jarvis.dto;
 
 import com.co.jarvis.dto.api.model.OrderApi;
 import com.co.jarvis.enums.EPaymentMethod;
+import com.co.jarvis.enums.EPaymentType;
 import com.co.jarvis.enums.EBilling;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -10,7 +11,7 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 @Data
@@ -21,7 +22,7 @@ public class BillingDto implements Serializable {
 
     private String id;
     private String billNumber;
-    private LocalDateTime dateTimeRecord;
+    private OffsetDateTime dateTimeRecord;
     private ClientDto client;
     private OrderApi order;
     private CompanyDto company;
@@ -35,4 +36,5 @@ public class BillingDto implements Serializable {
     private EBilling billingType;
     private List<EPaymentMethod> paymentMethods;
     private Boolean isReportInvoice;
+    private EPaymentType saleType;
 }

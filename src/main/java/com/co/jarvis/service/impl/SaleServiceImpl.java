@@ -27,8 +27,9 @@ import org.springframework.stereotype.Service;
 import java.io.FileNotFoundException;
 import java.lang.NumberFormatException;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -201,8 +202,8 @@ public class SaleServiceImpl implements SaleService {
             // Filtro por rango de fechas
             if (dto.hasFilterDate()) {
                 criteriaList.add(Criteria.where("dateTimeRecord")
-                        .gte(dto.getToDate().atStartOfDay())
-                        .lte(dto.getFromDate().atTime(LocalTime.now())));
+                        .gte(dto.getToDate().atStartOfDay().atZone(ZoneId.systemDefault()).toOffsetDateTime())
+                        .lte(dto.getFromDate().atTime(LocalTime.now()).atZone(ZoneId.systemDefault()).toOffsetDateTime()));
             }
 
             // Filtro por numero de factura
@@ -244,7 +245,8 @@ public class SaleServiceImpl implements SaleService {
     public List<ProductSalesSummary> getProductSalesSummary(BillingReportFilterDto dto) {
         if (dto.hasFilterDate()) {
             return repository.getProductSalesSummaryByDate(
-                    dto.getFromDate().atStartOfDay(), dto.getToDate().atTime(LocalTime.now()));
+                    dto.getFromDate().atStartOfDay().atZone(ZoneId.systemDefault()).toOffsetDateTime(), 
+                    dto.getToDate().atTime(LocalTime.now()).atZone(ZoneId.systemDefault()).toOffsetDateTime());
         }
 
         throw new RuntimeException("not filter data for products summary");
@@ -268,7 +270,9 @@ public class SaleServiceImpl implements SaleService {
                         .creationDate(orderDto.getCreationDate())
                         .creationUser(orderDto.getCreationUser())
                         .build())
-                .dateTimeRecord(orderDto.getCreationDate())
+                .dateTimeRecord(orderDto.getCreationDate() != null 
+                    ? orderDto.getCreationDate().atZone(ZoneId.systemDefault()).toOffsetDateTime()
+                    : OffsetDateTime.now())
                 .saleDetails(saleDetailDtos)
                 .subTotalSale(subTotalBill(saleDetailDtos))
                 .totalIVAT(ivaTotalBill(saleDetailDtos))

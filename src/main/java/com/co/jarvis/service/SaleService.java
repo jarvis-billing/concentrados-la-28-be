@@ -5,7 +5,6 @@ import com.co.jarvis.dto.BillingReportFilterDto;
 import com.co.jarvis.dto.ProductSalesSummary;
 import com.co.jarvis.util.exception.FieldsException;
 
-import java.time.LocalDate;
 import java.util.List;
 
 public interface SaleService extends BaseService<BillingDto> {

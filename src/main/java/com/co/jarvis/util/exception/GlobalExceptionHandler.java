@@ -1,7 +1,6 @@
 package com.co.jarvis.util.exception;
 
 import com.co.jarvis.util.exception.model.ErrorResponse;
-import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -9,19 +8,23 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import java.util.stream.Collectors;
+import org.springframework.validation.FieldError;
+import java.util.HashMap;
+import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Object> handleValidationExceptions(MethodArgumentNotValidException ex) {
-        String errorMessage = ex.getAllErrors().stream()
-                .map(DefaultMessageSourceResolvable::getDefaultMessage)
-                .toList().stream().collect(Collectors.joining(System.lineSeparator()));
-        ;
-
-        return new ResponseEntity<>(errorMessage, HttpStatus.BAD_REQUEST);
+        Map<String, Object> body = new HashMap<>();
+        Map<String, String> errors = new HashMap<>();
+        for (FieldError fe : ex.getBindingResult().getFieldErrors()) {
+            errors.put(fe.getField(), fe.getDefaultMessage());
+        }
+        body.put("message", "Validation failed");
+        body.put("errors", errors);
+        return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
@@ -62,7 +65,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(FieldsException.class)
     public ResponseEntity<Object> handleFileException(FieldsException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
+        Map<String, Object> body = new HashMap<>();
+        body.put("message", ex.getMessage() != null ? ex.getMessage() : "Validation failed");
+        if (ex.getErrors() != null) {
+            body.put("errors", ex.getErrors());
+        }
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
     @ExceptionHandler(PasswordUserBadException.class)

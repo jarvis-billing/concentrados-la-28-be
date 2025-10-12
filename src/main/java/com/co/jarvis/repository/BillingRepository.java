@@ -5,8 +5,7 @@ import com.co.jarvis.entity.Billing;
 import org.springframework.data.mongodb.repository.Aggregation;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 public interface BillingRepository extends MongoRepository<Billing, String> {
@@ -70,7 +69,7 @@ public interface BillingRepository extends MongoRepository<Billing, String> {
                     "} }",
             "{ '$sort': { 'totalAmount': -1 } }"
     })
-    List<ProductSalesSummary> getProductSalesSummaryByDate(LocalDateTime from, LocalDateTime to);
+    List<ProductSalesSummary> getProductSalesSummaryByDate(OffsetDateTime from, OffsetDateTime to);
 
 
 
@@ -89,6 +88,6 @@ public interface BillingRepository extends MongoRepository<Billing, String> {
                     "} }",
             "{ '$sort': { 'totalAmount': -1 } }"
     })
-    List<ProductSalesSummary> getProductSalesSummaryByDateAndProduct(LocalDateTime from, LocalDateTime to, String productBarcode);
+    List<ProductSalesSummary> getProductSalesSummaryByDateAndProduct(OffsetDateTime from, OffsetDateTime to, String productBarcode);
 
 }
