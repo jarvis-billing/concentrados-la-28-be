@@ -4,6 +4,8 @@ import com.co.jarvis.dto.*;
 import com.co.jarvis.dto.api.model.OrderApi;
 import com.co.jarvis.dto.api.model.ProductApi;
 import com.co.jarvis.entity.Billing;
+import com.co.jarvis.enums.EPaymentMethod;
+import com.co.jarvis.enums.EPaymentType;
 import com.co.jarvis.enums.EStatus;
 import com.co.jarvis.enums.EStatusOrder;
 import com.co.jarvis.enums.EVat;
@@ -31,8 +33,10 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static java.lang.String.format;
@@ -101,6 +105,64 @@ public class SaleServiceImpl implements SaleService {
             if (billing != null) {
                 throw new DuplicateRecordException(MessageConstants.DUPLICATE_RECORD_ERROR);
             }
+
+            // Mixed payments handling
+            if (dto.getSaleType() == EPaymentType.CREDITO) {
+                dto.setReceivedValue(BigDecimal.ZERO);
+                dto.setReturnedValue(BigDecimal.ZERO);
+                // Ignore/clear methods if any provided together with payments
+                if (dto.getPayments() != null && !dto.getPayments().isEmpty()) {
+                    dto.setPaymentMethods(new ArrayList<>());
+                }
+            } else if (dto.getSaleType() == EPaymentType.CONTADO && dto.getPayments() != null && !dto.getPayments().isEmpty()) {
+                // Validate and compute
+                List<PaymentEntryDto> pays = dto.getPayments();
+                BigDecimal total = dto.getTotalBilling() != null ? dto.getTotalBilling() : BigDecimal.ZERO;
+                BigDecimal received = BigDecimal.ZERO;
+                BigDecimal cash = BigDecimal.ZERO;
+                BigDecimal nonCash = BigDecimal.ZERO;
+                Set<EPaymentMethod> methods = new HashSet<>();
+
+                for (PaymentEntryDto p : pays) {
+                    if (p.getAmount() == null || p.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                        throw new FieldsException("Validation failed", java.util.Map.of("payments", "Monto de pago debe ser mayor a 0"));
+                    }
+                    if (p.getMethod() == null || p.getMethod().isBlank()) {
+                        throw new FieldsException("Validation failed", java.util.Map.of("payments", "Método de pago requerido"));
+                    }
+                    EPaymentMethod m;
+                    try {
+                        m = EPaymentMethod.valueOf(p.getMethod().trim().toUpperCase());
+                    } catch (IllegalArgumentException ex) {
+                        throw new FieldsException("Validation failed", java.util.Map.of("payments", "Método de pago inválido: " + p.getMethod()));
+                    }
+                    methods.add(m);
+                    received = received.add(p.getAmount());
+                    if (m == EPaymentMethod.EFECTIVO) {
+                        cash = cash.add(p.getAmount());
+                    } else {
+                        nonCash = nonCash.add(p.getAmount());
+                    }
+                }
+
+                if (received.compareTo(total) < 0) {
+                    throw new FieldsException("Validation failed", java.util.Map.of("payments", "Pagos insuficientes para total de contado"));
+                }
+
+                BigDecimal remaining = total.subtract(nonCash);
+                if (remaining.compareTo(BigDecimal.ZERO) < 0) {
+                    remaining = BigDecimal.ZERO;
+                }
+                BigDecimal returned = cash.subtract(remaining);
+                if (returned.compareTo(BigDecimal.ZERO) < 0) {
+                    returned = BigDecimal.ZERO;
+                }
+
+                dto.setPaymentMethods(new ArrayList<>(methods));
+                dto.setReceivedValue(received);
+                dto.setReturnedValue(returned);
+            }
+
             Billing venta = mapper.mapToEntity(dto);
             Long orderNumber = dto.getOrder().getOrderNumber();
             if (orderNumber != null && orderNumber.intValue() > 0) {

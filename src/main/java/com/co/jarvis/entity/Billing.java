@@ -39,5 +39,6 @@ public class Billing {
     private List<EPaymentMethod> paymentMethods;
     private Boolean isReportInvoice;
     private EPaymentType saleType;
+    private List<PaymentEntry> payments;
 }
 

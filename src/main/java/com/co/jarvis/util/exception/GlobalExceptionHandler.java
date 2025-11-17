@@ -63,6 +63,7 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ex.getMessage());
     }
 
+
     @ExceptionHandler(FieldsException.class)
     public ResponseEntity<Object> handleFileException(FieldsException ex) {
         Map<String, Object> body = new HashMap<>();
