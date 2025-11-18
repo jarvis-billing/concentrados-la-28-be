@@ -1,10 +1,7 @@
 package com.co.jarvis.service.impl;
 
 import com.co.jarvis.dto.CatalogDto;
-import com.co.jarvis.dto.ProductDto;
 import com.co.jarvis.entity.Catalog;
-import com.co.jarvis.entity.Product;
-import com.co.jarvis.enums.CatalogType;
 import com.co.jarvis.repository.CatalogRepository;
 import com.co.jarvis.service.CatalogService;
 import com.co.jarvis.util.exception.ResourceNotFoundException;

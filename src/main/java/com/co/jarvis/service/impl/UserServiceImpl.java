@@ -37,8 +37,6 @@ public class UserServiceImpl implements UserService {
 
     GenericMapper<User, UserDto> mapper = new GenericMapper<>(User.class, UserDto.class);
 
-    private Set<GrantedAuthority> setGrantedAuthorities = new HashSet<>();
-
     @Override
     public UserDto loginUser(String idNumber, String password) {
         logger.info("UserServiceImpl -> loginUser");
