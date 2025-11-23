@@ -128,12 +128,12 @@ public class ProductServiceImpl implements ProductService {
                 String trimmed = barcode.trim();
 
                 // Validación de formato: 4 dígitos numéricos
-                if (!trimmed.matches("\\d{4}")) {
+                if (trimmed.length() < 5 && !trimmed.matches("\\d{4}")) {
                     throw new SaveRecordException("El código de barras debe ser numérico de 4 dígitos.");
                 }
 
                 // Validación: debe iniciar con el dígito configurado
-                if (!trimmed.startsWith(barcodeStartDigit)) {
+                if (trimmed.length() < 5 && !trimmed.startsWith(barcodeStartDigit)) {
                     throw new SaveRecordException(format("El código de barras debe iniciar con '%s'.", barcodeStartDigit));
                 }
 

@@ -23,7 +23,7 @@ public interface ProductRepository extends MongoRepository<Product, String> {
 
     @Aggregation(pipeline = {
             "{ $unwind: '$presentations' }",
-            "{ $match: { 'presentations.barcode': { $regex: '^[0-9]+$' } } }", // Solo barcodes numéricos
+            "{ $match: { 'presentations.barcode': { $regex: '^[0-9]{4}$' } } }", // Solo barcodes numéricos de 4 dígitos para códigos internos
             "{ $addFields: { 'presentations.barcodeAsNumber': { $toInt: '$presentations.barcode' } } }",
             "{ $sort: { 'presentations.barcodeAsNumber': -1 } }",
             "{ $limit: 1 }",
