@@ -2,6 +2,7 @@ package com.co.jarvis.controller;
 
 import com.co.jarvis.dto.PurchaseFilterDto;
 import com.co.jarvis.dto.PurchaseInvoiceDto;
+import com.co.jarvis.dto.SupplierRefDto;
 import com.co.jarvis.service.PurchaseInvoiceService;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
@@ -37,9 +38,12 @@ public class PurchaseInvoiceController {
     ) {
         logger.info("PurchaseInvoiceController -> list");
         
+        SupplierRefDto supplierRef = (supplierId != null || supplierName != null) 
+            ? SupplierRefDto.builder().id(supplierId).name(supplierName).build() 
+            : null;
+        
         PurchaseFilterDto filter = PurchaseFilterDto.builder()
-            .supplierId(supplierId)
-            .supplierName(supplierName)
+            .supplier(supplierRef)
             .invoiceNumber(invoiceNumber)
             .build();
         

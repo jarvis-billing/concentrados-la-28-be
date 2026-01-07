@@ -1,5 +1,6 @@
 package com.co.jarvis.entity;
 
+import com.co.jarvis.enums.EPaymentType;
 import com.co.jarvis.enums.EPurchaseInvoiceStatus;
 import jakarta.persistence.Id;
 import lombok.AllArgsConstructor;
@@ -10,6 +11,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -26,11 +28,14 @@ public class PurchaseInvoice {
     @Field("invoice_number")
     private String invoiceNumber;
     
-    @Field("supplier_id")
-    private String supplierId;
+    @Field("supplier")
+    private SupplierRef supplier;
     
-    @Field("supplier_name")
-    private String supplierName;
+    @Field("invoice_date")
+    private LocalDate invoiceDate;
+    
+    @Field("payment_type")
+    private EPaymentType paymentType;
     
     @Field("date")
     private OffsetDateTime date;

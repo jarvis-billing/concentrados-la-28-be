@@ -12,7 +12,7 @@ public interface PurchaseInvoiceRepository extends MongoRepository<PurchaseInvoi
     @Query("{ 'invoiceNumber': ?0 }")
     PurchaseInvoice findByInvoiceNumber(String invoiceNumber);
     
-    @Query("{ 'supplierId': ?0 }")
+    @Query("{ 'supplier.id': ?0 }")
     List<PurchaseInvoice> findBySupplierId(String supplierId);
     
     @Query("{ 'date': { $gte: ?0, $lte: ?1 } }")

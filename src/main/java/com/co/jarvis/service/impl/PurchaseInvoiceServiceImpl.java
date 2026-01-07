@@ -3,9 +3,11 @@ package com.co.jarvis.service.impl;
 import com.co.jarvis.dto.PurchaseFilterDto;
 import com.co.jarvis.dto.PurchaseInvoiceDto;
 import com.co.jarvis.dto.PurchaseInvoiceItemDto;
+import com.co.jarvis.entity.Presentation;
 import com.co.jarvis.entity.Product;
 import com.co.jarvis.entity.PurchaseInvoice;
 import com.co.jarvis.entity.PurchaseInvoiceItem;
+import com.co.jarvis.enums.ESale;
 import com.co.jarvis.enums.EPurchaseInvoiceStatus;
 import com.co.jarvis.repository.ProductRepository;
 import com.co.jarvis.repository.PurchaseInvoiceRepository;
@@ -26,6 +28,7 @@ import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -58,8 +61,8 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
                     filter.getDateFrom(), 
                     filter.getDateTo()
                 );
-            } else if (filter.getSupplierId() != null) {
-                invoices = purchaseInvoiceRepository.findBySupplierId(filter.getSupplierId());
+            } else if (filter.getSupplier() != null && filter.getSupplier().getId() != null) {
+                invoices = purchaseInvoiceRepository.findBySupplierId(filter.getSupplier().getId());
             } else if (filter.getInvoiceNumber() != null) {
                 PurchaseInvoice invoice = purchaseInvoiceRepository.findByInvoiceNumber(
                     filter.getInvoiceNumber()
@@ -221,12 +224,14 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
     /**
      * Actualiza el stock de productos al crear una factura de compra.
      * Incrementa el stock sumando la cantidad comprada de cada item.
+     * Si el producto tiene tipo de venta diferente a UNIT, multiplica la cantidad por el fixedAmount de la presentación.
      */
     private void updateStockForCreation(List<PurchaseInvoiceItem> items) {
         log.info("PurchaseInvoiceServiceImpl -> updateStockForCreation");
         
         if (items == null || items.isEmpty()) {
-            return;
+            log.warn("No se proporcionaron items para actualizar el stock");
+            throw new SaveRecordException("No se proporcionaron items para actualizar el stock");
         }
 
         for (PurchaseInvoiceItem item : items) {
@@ -240,19 +245,111 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
                 );
             }
 
+            // Obtener stock actual antes de incrementar
+            BigDecimal stockAntes = product.getStock() != null ? product.getStock().getQuantity() : BigDecimal.ZERO;
+            log.info("Stock ANTES para producto {}: {}", product.getProductCode(), stockAntes);
+
+            // Calcular cantidad real de stock a incrementar
+            BigDecimal stockQuantity = calculateStockQuantity(product, item);
+
             // Incrementar stock
-            product.increaseStock(item.getQuantity());
+            product.increaseStock(stockQuantity);
+            
+            // Obtener stock después de incrementar
+            BigDecimal stockDespues = product.getStock().getQuantity();
+            log.info("Stock DESPUÉS para producto {}: {} (incrementó: {})", 
+                product.getProductCode(), stockDespues, stockQuantity);
+            
             productRepository.save(product);
             
-            log.info("Stock incrementado para producto {}: +{}", 
-                product.getProductCode(), item.getQuantity());
+            log.info("Stock incrementado para producto {}: +{} (cantidad ingresada: {}, stock final: {})", 
+                product.getProductCode(), stockQuantity, item.getQuantity(), stockDespues);
         }
+    }
+
+    /**
+     * Calcula la cantidad real de stock basada en el tipo de venta del producto.
+     * Si el tipo de venta es diferente a UNIT, multiplica la cantidad por el fixedAmount de la presentación.
+     * Ejemplo: 20 bultos x 40 kg (fixedAmount) = 800 kg de stock.
+     */
+    private BigDecimal calculateStockQuantity(Product product, PurchaseInvoiceItem item) {
+        BigDecimal quantity = item.getQuantity();
+        
+        log.info("calculateStockQuantity -> Producto: {}, SaleType: {}, Cantidad ingresada: {}",
+            product.getProductCode(), product.getSaleType(), quantity);
+        
+        // Si el tipo de venta es UNIT o null, retornar la cantidad directamente
+        if (product.getSaleType() == null || product.getSaleType() == ESale.UNIT) {
+            log.info("Producto {} con tipo de venta UNIT o null, usando cantidad directa: {}",
+                product.getProductCode(), quantity);
+            return quantity;
+        }
+        
+        // Para otros tipos de venta (WEIGHT, VOLUME, etc.), buscar el fixedAmount de la presentación
+        BigDecimal fixedAmount = findFixedAmountForItem(product, item);
+        
+        log.info("Producto {} -> fixedAmount encontrado: {}", product.getProductCode(), fixedAmount);
+        
+        if (fixedAmount != null && fixedAmount.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal realQuantity = quantity.multiply(fixedAmount);
+            log.info("Producto {} con tipo de venta {}: {} unidades x {} (fixedAmount) = {} stock real",
+                product.getProductCode(), product.getSaleType(), quantity, fixedAmount, realQuantity);
+            return realQuantity;
+        }
+        
+        // Si no hay fixedAmount, retornar la cantidad original
+        log.warn("Producto {} sin fixedAmount definido, usando cantidad directa: {}", 
+            product.getProductCode(), quantity);
+        return quantity;
+    }
+
+    /**
+     * Busca el fixedAmount de la presentación correspondiente al item.
+     * Primero busca por presentationBarcode, luego por la primera presentación con fixedAmount definido.
+     */
+    private BigDecimal findFixedAmountForItem(Product product, PurchaseInvoiceItem item) {
+        if (product.getPresentations() == null || product.getPresentations().isEmpty()) {
+            log.info("findFixedAmountForItem -> Producto {} sin presentaciones", product.getProductCode());
+            return null;
+        }
+        
+        log.info("findFixedAmountForItem -> Producto {} tiene {} presentaciones, presentationBarcode del item: {}",
+            product.getProductCode(), product.getPresentations().size(), item.getPresentationBarcode());
+        
+        // Si se especificó un barcode de presentación, buscar esa presentación específica
+        if (item.getPresentationBarcode() != null) {
+            for (Presentation presentation : product.getPresentations()) {
+                log.info("findFixedAmountForItem -> Comparando barcode: {} con {}, fixedAmount: {}",
+                    item.getPresentationBarcode(), presentation.getBarcode(), presentation.getFixedAmount());
+                if (item.getPresentationBarcode().equals(presentation.getBarcode())) {
+                    // Usar fixedAmount si existe, independientemente de isFixedAmount
+                    if (presentation.getFixedAmount() != null && presentation.getFixedAmount().compareTo(BigDecimal.ZERO) > 0) {
+                        log.info("findFixedAmountForItem -> Encontrado fixedAmount por barcode: {}", presentation.getFixedAmount());
+                        return presentation.getFixedAmount();
+                    }
+                }
+            }
+        }
+        
+        // Si no se encontró por barcode, buscar la primera presentación con fixedAmount definido
+        for (Presentation presentation : product.getPresentations()) {
+            log.info("findFixedAmountForItem -> Revisando presentación: barcode={}, fixedAmount={}",
+                presentation.getBarcode(), presentation.getFixedAmount());
+            if (presentation.getFixedAmount() != null && presentation.getFixedAmount().compareTo(BigDecimal.ZERO) > 0) {
+                log.info("findFixedAmountForItem -> Usando primera presentación con fixedAmount: {}", presentation.getFixedAmount());
+                return presentation.getFixedAmount();
+            }
+        }
+        
+        log.warn("findFixedAmountForItem -> No se encontró fixedAmount para producto {}", product.getProductCode());
+        return null;
     }
 
     /**
      * Ajusta el stock de productos al actualizar una factura de compra.
      * Calcula las diferencias entre la versión original y la nueva versión,
      * y ajusta el stock en consecuencia.
+     * Considera el fixedAmount para productos con tipo de venta diferente a UNIT.
      */
     private void adjustStockForUpdate(
         List<PurchaseInvoiceItem> originalItems, 
@@ -266,8 +363,9 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             .collect(Collectors.toList());
 
         // Crear mapas para facilitar comparaciones: clave = productId o productCode
-        Map<String, BigDecimal> originalQuantities = buildQuantityMap(originalItems);
-        Map<String, BigDecimal> newQuantities = buildQuantityMap(newItems);
+        // Los mapas ahora contienen las cantidades reales de stock (considerando fixedAmount)
+        Map<String, BigDecimal> originalQuantities = buildStockQuantityMap(originalItems);
+        Map<String, BigDecimal> newQuantities = buildStockQuantityMap(newItems);
 
         // Obtener todas las claves únicas (productos afectados)
         Map<String, BigDecimal> allKeys = new HashMap<>();
@@ -292,7 +390,7 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
                 throw new ResourceNotFoundException("Producto no encontrado: " + key);
             }
 
-            // Ajustar stock según la diferencia
+            // Ajustar stock según la diferencia (ya está calculada con fixedAmount)
             if (difference.compareTo(BigDecimal.ZERO) > 0) {
                 // Incremento: se agregó más cantidad o es un producto nuevo
                 product.increaseStock(difference);
@@ -310,9 +408,10 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
     }
 
     /**
-     * Construye un mapa de cantidades por producto (key = productId o productCode)
+     * Construye un mapa de cantidades de stock reales por producto (key = productId o productCode).
+     * Considera el fixedAmount para productos con tipo de venta diferente a UNIT.
      */
-    private Map<String, BigDecimal> buildQuantityMap(List<PurchaseInvoiceItem> items) {
+    private Map<String, BigDecimal> buildStockQuantityMap(List<PurchaseInvoiceItem> items) {
         Map<String, BigDecimal> map = new HashMap<>();
         
         if (items == null) {
@@ -323,8 +422,19 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             String key = item.getProductId() != null ? 
                 item.getProductId() : item.getProductCode();
             
+            // Buscar el producto para calcular la cantidad real de stock
+            Product product = findProductByKey(key);
+            BigDecimal stockQuantity;
+            
+            if (product != null) {
+                stockQuantity = calculateStockQuantity(product, item);
+            } else {
+                // Si no se encuentra el producto, usar la cantidad directa
+                stockQuantity = item.getQuantity();
+            }
+            
             BigDecimal currentQty = map.getOrDefault(key, BigDecimal.ZERO);
-            map.put(key, currentQty.add(item.getQuantity()));
+            map.put(key, currentQty.add(stockQuantity));
         }
         
         return map;
@@ -335,7 +445,7 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
      */
     private Product findProductByItem(PurchaseInvoiceItem item) {
         if (item.getProductId() != null) {
-            return productRepository.findById(item.getProductId()).orElse(null);
+            return productRepository.findById(Objects.requireNonNull(item.getProductId())).orElse(null);
         } else if (item.getProductCode() != null) {
             // Buscar por productCode usando query
             List<Product> products = productRepository.findAll();

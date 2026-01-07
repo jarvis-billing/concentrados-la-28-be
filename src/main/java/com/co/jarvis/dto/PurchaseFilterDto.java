@@ -15,7 +15,6 @@ import java.time.OffsetDateTime;
 public class PurchaseFilterDto implements Serializable {
     private OffsetDateTime dateFrom;
     private OffsetDateTime dateTo;
-    private String supplierId;
-    private String supplierName;
+    private SupplierRefDto supplier;
     private String invoiceNumber;
 }

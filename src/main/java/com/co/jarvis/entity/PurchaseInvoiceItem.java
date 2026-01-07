@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 public class PurchaseInvoiceItem {
     private String productId;
     private String productCode;
+    private String presentationBarcode;
     private String description;
     private BigDecimal quantity;
     private BigDecimal unitCost;

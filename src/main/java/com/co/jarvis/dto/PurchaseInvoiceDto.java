@@ -1,5 +1,6 @@
 package com.co.jarvis.dto;
 
+import com.co.jarvis.enums.EPaymentType;
 import com.co.jarvis.enums.EPurchaseInvoiceStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -8,6 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -18,8 +20,9 @@ import java.util.List;
 public class PurchaseInvoiceDto implements Serializable {
     private String id;
     private String invoiceNumber;
-    private String supplierId;
-    private String supplierName;
+    private SupplierRefDto supplier;
+    private LocalDate invoiceDate;
+    private EPaymentType paymentType;
     private OffsetDateTime date;
     private List<PurchaseInvoiceItemDto> items;
     private BigDecimal totalAmount;

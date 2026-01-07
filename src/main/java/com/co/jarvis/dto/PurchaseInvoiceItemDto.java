@@ -15,6 +15,7 @@ import java.math.BigDecimal;
 public class PurchaseInvoiceItemDto implements Serializable {
     private String productId;
     private String productCode;
+    private String presentationBarcode;
     private String description;
     private BigDecimal quantity;
     private BigDecimal unitCost;
