@@ -20,7 +20,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -43,8 +42,7 @@ public class ProductServiceImpl implements ProductService {
 
     private static final Logger logger = LoggerFactory.getLogger(ProductServiceImpl.class);
 
-    @Value("${barcode.start.digit}")
-    private String barcodeStartDigit;
+    private static final int DEFAULT_BARCODE_START = 1000;
 
     @Autowired
     private ProductRepository repository;
@@ -127,14 +125,10 @@ public class ProductServiceImpl implements ProductService {
             if (barcode != null && !barcode.isBlank()) {
                 String trimmed = barcode.trim();
 
-                // Validación de formato: 4 dígitos numéricos
-                if (trimmed.length() < 5 && !trimmed.matches("\\d{4}")) {
-                    throw new SaveRecordException("El código de barras debe ser numérico de 4 dígitos.");
-                }
-
-                // Validación: debe iniciar con el dígito configurado
-                if (trimmed.length() < 5 && !trimmed.startsWith(barcodeStartDigit)) {
-                    throw new SaveRecordException(format("El código de barras debe iniciar con '%s'.", barcodeStartDigit));
+                // Validación de formato para códigos internos: 4 dígitos numéricos
+                // Los códigos externos (EAN-13, UPC, etc.) pueden tener más de 4 dígitos
+                if (trimmed.length() <= 4 && !trimmed.matches("\\d{4}")) {
+                    throw new SaveRecordException("El código de barras interno debe ser numérico de 4 dígitos.");
                 }
 
                 // Verificar unicidad: si ya existe, lanzar excepción
@@ -154,24 +148,16 @@ public class ProductServiceImpl implements ProductService {
                 return trimmed;
             }
 
-            // Si no se envía barcode, generar el siguiente automáticamente
-            String lastBarcode = findLastBarcodeStartingWithConfiguredDigit();
-            int baseNumber;
-            try {
-                baseNumber = Integer.parseInt(barcodeStartDigit + "00");
-            } catch (NumberFormatException e) {
-                logger.warn("Configuración 'barcodeStartDigit' no numérica: {}", barcodeStartDigit);
-                baseNumber = 2800; // Fallback seguro
-            }
-
-            int nextNumber = baseNumber;
+            // Si no se envía barcode, generar el siguiente automáticamente basado en el último de la BD
+            String lastBarcode = repository.findHighestBarcodeAsString();
+            int nextNumber = DEFAULT_BARCODE_START;
+            
             if (lastBarcode != null && !lastBarcode.isEmpty() && lastBarcode.matches("\\d{4}")) {
                 try {
                     int currentNumber = Integer.parseInt(lastBarcode);
                     nextNumber = currentNumber + 1;
                 } catch (NumberFormatException e) {
                     logger.warn("El último barcode no es numérico válido: {}", lastBarcode);
-                    nextNumber = baseNumber;
                 }
             }
 
@@ -201,13 +187,6 @@ public class ProductServiceImpl implements ProductService {
         return nextCode;
     }
 
-    private String findLastBarcodeStartingWithConfiguredDigit() {
-        String barcode = repository.findHighestBarcodeAsString();
-        if (barcode != null && barcode.startsWith(barcodeStartDigit)) {
-            return barcode;
-        }
-        return null;
-    }
 
     @Override
     public List<ProductDto> findAll() {

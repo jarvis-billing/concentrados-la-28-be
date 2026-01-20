@@ -10,7 +10,11 @@ import com.co.jarvis.enums.EStatus;
 import com.co.jarvis.enums.EStatusOrder;
 import com.co.jarvis.enums.EVat;
 import com.co.jarvis.repository.BillingRepository;
+import com.co.jarvis.repository.ProductRepository;
 import com.co.jarvis.service.*;
+import com.co.jarvis.entity.Product;
+import com.co.jarvis.entity.Presentation;
+import com.co.jarvis.enums.ESale;
 import com.co.jarvis.util.exception.*;
 import com.co.jarvis.util.mappers.GenericMapper;
 import com.co.jarvis.util.mensajes.MessageConstants;
@@ -71,6 +75,12 @@ public class SaleServiceImpl implements SaleService {
 
     @Autowired
     private ProductService productService;
+
+    @Autowired
+    private InventoryService inventoryService;
+
+    @Autowired
+    private ProductRepository productRepository;
 
     GenericMapper<Billing, BillingDto> mapper
             = new GenericMapper<>(Billing.class, BillingDto.class);
@@ -169,7 +179,14 @@ public class SaleServiceImpl implements SaleService {
                 orderService.changeStatus(orderNumber, EStatusOrder.FACTURADO);
             }
 
-            return mapper.mapToDto(repository.save(venta));
+            // Guardar la factura
+            Billing savedBilling = repository.save(venta);
+            
+            // Descontar stock de los productos vendidos
+            updateStockForSale(dto.getSaleDetails(), savedBilling.getId(), 
+                    dto.getCreationUser() != null ? dto.getCreationUser().getId() : null);
+
+            return mapper.mapToDto(savedBilling);
         } catch (DuplicateRecordException e) {
             logger.error("SaleServiceImpl -> save -> ERROR: {}", e.getMessage());
             throw new DuplicateRecordException(e.getMessage());
@@ -444,5 +461,95 @@ public class SaleServiceImpl implements SaleService {
         return BigDecimal.ZERO;
     }
 
+    /**
+     * Descuenta el stock de los productos vendidos.
+     * Considera el fixedAmount de la presentación para productos a granel.
+     */
+    private void updateStockForSale(List<SaleDetailDto> saleDetails, String billingId, String userId) {
+        logger.info("SaleServiceImpl -> updateStockForSale");
+        
+        if (saleDetails == null || saleDetails.isEmpty()) {
+            logger.warn("No se proporcionaron detalles de venta para actualizar el stock");
+            return;
+        }
+
+        for (SaleDetailDto detail : saleDetails) {
+            if (detail.getProduct() == null || detail.getProduct().getId() == null) {
+                logger.warn("Detalle de venta sin producto válido, omitiendo");
+                continue;
+            }
+            
+            if (detail.getAmount() == null || detail.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+                logger.warn("Detalle de venta sin cantidad válida para producto: {}", 
+                    detail.getProduct().getDescription());
+                continue;
+            }
+
+            String productId = detail.getProduct().getId();
+            String barcode = detail.getProduct().getBarcode();
+            BigDecimal amount = detail.getAmount();
+
+            // Obtener el producto para calcular la cantidad real de stock a descontar
+            Product product = productRepository.findById(productId).orElse(null);
+            if (product == null) {
+                logger.warn("Producto no encontrado con ID: {}", productId);
+                continue;
+            }
+
+            // Calcular cantidad real de stock a descontar
+            Double stockQuantity = calculateStockQuantityForSale(product, barcode, amount);
+
+            logger.info("Descontando stock para producto {}: cantidad vendida={}, stock a descontar={}",
+                product.getProductCode(), amount, stockQuantity);
+
+            // Registrar movimiento de venta y descontar stock
+            inventoryService.registerSaleMovement(billingId, productId, stockQuantity, barcode, userId);
+        }
+    }
+
+    /**
+     * Calcula la cantidad real de stock a descontar basada en el tipo de venta del producto.
+     * Si el tipo de venta es diferente a UNIT, multiplica la cantidad por el fixedAmount de la presentación.
+     * Ejemplo: Si se venden 5 kg de un producto que viene en bultos de 40 kg, se descuentan 5 kg del stock.
+     * Pero si se vende 1 bulto, se descuentan 40 kg (1 * fixedAmount).
+     */
+    private Double calculateStockQuantityForSale(Product product, String barcode, BigDecimal amount) {
+        logger.info("calculateStockQuantityForSale -> Producto: {}, SaleType: {}, Cantidad vendida: {}, Barcode: {}",
+            product.getProductCode(), product.getSaleType(), amount, barcode);
+        
+        // Si el tipo de venta es UNIT o null, retornar la cantidad directamente
+        if (product.getSaleType() == null || product.getSaleType() == ESale.UNIT) {
+            logger.info("Producto {} con tipo de venta UNIT o null, usando cantidad directa: {}",
+                product.getProductCode(), amount);
+            return amount.doubleValue();
+        }
+        
+        // Para productos a granel (WEIGHT, VOLUME, etc.), verificar si la presentación tiene fixedAmount
+        // y si la venta fue por unidad de presentación (bulto) o por peso/volumen directo
+        if (barcode != null && product.getPresentations() != null) {
+            for (Presentation presentation : product.getPresentations()) {
+                if (barcode.equals(presentation.getBarcode())) {
+                    // Si la presentación tiene isFixedAmount=true y fixedAmount definido,
+                    // significa que se vendió por unidad de presentación (ej: 1 bulto)
+                    // y debemos multiplicar por el fixedAmount
+                    if (Boolean.TRUE.equals(presentation.getIsFixedAmount()) && 
+                        presentation.getFixedAmount() != null && 
+                        presentation.getFixedAmount().compareTo(BigDecimal.ZERO) > 0) {
+                        
+                        BigDecimal realQuantity = amount.multiply(presentation.getFixedAmount());
+                        logger.info("Producto {} vendido por presentación fija: {} unidades x {} (fixedAmount) = {} stock real",
+                            product.getProductCode(), amount, presentation.getFixedAmount(), realQuantity);
+                        return realQuantity.doubleValue();
+                    }
+                    break;
+                }
+            }
+        }
+        
+        // Si no hay fixedAmount o la venta fue directa por peso/volumen, usar cantidad directa
+        logger.info("Producto {} sin fixedAmount aplicable, usando cantidad directa: {}", 
+            product.getProductCode(), amount);
+        return amount.doubleValue();
+    }
 
 }
