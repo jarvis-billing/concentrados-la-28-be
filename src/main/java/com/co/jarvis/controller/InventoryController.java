@@ -1,6 +1,7 @@
 package com.co.jarvis.controller;
 
 import com.co.jarvis.dto.InventoryDashboardDto;
+import com.co.jarvis.dto.PhysicalInventoryRequestDto;
 import com.co.jarvis.dto.StockAlertDto;
 import com.co.jarvis.entity.InventoryAdjustment;
 import com.co.jarvis.entity.InventoryMovement;
@@ -93,6 +94,14 @@ public class InventoryController {
     public ResponseEntity<PhysicalInventory> createPhysicalInventory(@RequestBody PhysicalInventory inventory) {
         logger.info("InventoryController -> createPhysicalInventory");
         PhysicalInventory created = inventoryService.createPhysicalInventory(inventory);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    @PostMapping("/physical-count/presentations")
+    public ResponseEntity<PhysicalInventory> createPhysicalInventoryWithPresentations(
+            @RequestBody PhysicalInventoryRequestDto request) {
+        logger.info("InventoryController -> createPhysicalInventoryWithPresentations");
+        PhysicalInventory created = inventoryService.createPhysicalInventoryWithPresentations(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 

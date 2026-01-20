@@ -8,6 +8,7 @@ import com.co.jarvis.entity.User;
 import com.co.jarvis.enums.EStatusOrder;
 import com.co.jarvis.repository.OrderRepository;
 import com.co.jarvis.service.OrderService;
+import com.co.jarvis.util.DateTimeUtil;
 import com.co.jarvis.util.exception.*;
 import com.co.jarvis.util.mappers.GenericMapper;
 import com.co.jarvis.util.mappers.PaginationMapper;
@@ -187,7 +188,7 @@ public class OrderServiceImpl implements OrderService {
 
             Order entityBd = new Order();
             entityBd.setOrderNumber(orderNumber);
-            entityBd.setCreationDate(LocalDateTime.now());
+            entityBd.setCreationDate(DateTimeUtil.nowLocalDateTime());
             entityBd.setStatus(EStatusOrder.INICIADO);
             entityBd.setCreationUser(mapperUser.mapToEntity(loginUserService.getUserLoginContext()));
 
@@ -263,7 +264,7 @@ public class OrderServiceImpl implements OrderService {
         Order entity = mapper.mapToEntity(dto);
         entity.setId(id);
         entity.setCreationDate(creacion);
-        entity.setUpdateDate(LocalDateTime.now());
+        entity.setUpdateDate(DateTimeUtil.nowLocalDateTime());
         entity = repository.save(entity);
         return mapper.mapToDto(entity);
     }

@@ -15,6 +15,7 @@ import com.co.jarvis.service.*;
 import com.co.jarvis.entity.Product;
 import com.co.jarvis.entity.Presentation;
 import com.co.jarvis.enums.ESale;
+import com.co.jarvis.util.DateTimeUtil;
 import com.co.jarvis.util.exception.*;
 import com.co.jarvis.util.mappers.GenericMapper;
 import com.co.jarvis.util.mensajes.MessageConstants;
@@ -34,8 +35,6 @@ import java.io.FileNotFoundException;
 import java.lang.NumberFormatException;
 import java.math.BigDecimal;
 import java.time.LocalTime;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -281,8 +280,8 @@ public class SaleServiceImpl implements SaleService {
             // Filtro por rango de fechas
             if (dto.hasFilterDate()) {
                 criteriaList.add(Criteria.where("dateTimeRecord")
-                        .gte(dto.getToDate().atStartOfDay().atZone(ZoneId.systemDefault()).toOffsetDateTime())
-                        .lte(dto.getFromDate().atTime(LocalTime.now()).atZone(ZoneId.systemDefault()).toOffsetDateTime()));
+                        .gte(dto.getToDate().atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime())
+                        .lte(dto.getFromDate().atTime(LocalTime.now()).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime()));
             }
 
             // Filtro por numero de factura
@@ -324,8 +323,8 @@ public class SaleServiceImpl implements SaleService {
     public List<ProductSalesSummary> getProductSalesSummary(BillingReportFilterDto dto) {
         if (dto.hasFilterDate()) {
             return repository.getProductSalesSummaryByDate(
-                    dto.getFromDate().atStartOfDay().atZone(ZoneId.systemDefault()).toOffsetDateTime(), 
-                    dto.getToDate().atTime(LocalTime.now()).atZone(ZoneId.systemDefault()).toOffsetDateTime());
+                    dto.getFromDate().atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime(), 
+                    dto.getToDate().atTime(LocalTime.now()).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime());
         }
 
         throw new RuntimeException("not filter data for products summary");
@@ -350,8 +349,8 @@ public class SaleServiceImpl implements SaleService {
                         .creationUser(orderDto.getCreationUser())
                         .build())
                 .dateTimeRecord(orderDto.getCreationDate() != null 
-                    ? orderDto.getCreationDate().atZone(ZoneId.systemDefault()).toOffsetDateTime()
-                    : OffsetDateTime.now())
+                    ? orderDto.getCreationDate().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime()
+                    : DateTimeUtil.nowOffsetDateTime())
                 .saleDetails(saleDetailDtos)
                 .subTotalSale(subTotalBill(saleDetailDtos))
                 .totalIVAT(ivaTotalBill(saleDetailDtos))

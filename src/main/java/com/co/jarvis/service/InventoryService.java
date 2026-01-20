@@ -1,6 +1,7 @@
 package com.co.jarvis.service;
 
 import com.co.jarvis.dto.InventoryDashboardDto;
+import com.co.jarvis.dto.PhysicalInventoryRequestDto;
 import com.co.jarvis.dto.StockAlertDto;
 import com.co.jarvis.entity.InventoryAdjustment;
 import com.co.jarvis.entity.InventoryMovement;
@@ -31,6 +32,8 @@ public interface InventoryService {
     PhysicalInventory getPhysicalInventoryById(String id);
     
     PhysicalInventory createPhysicalInventory(PhysicalInventory inventory);
+    
+    PhysicalInventory createPhysicalInventoryWithPresentations(PhysicalInventoryRequestDto request);
 
     // ========== AJUSTES ==========
     List<InventoryAdjustment> getAdjustments(String startDate, String endDate, String productId, 
