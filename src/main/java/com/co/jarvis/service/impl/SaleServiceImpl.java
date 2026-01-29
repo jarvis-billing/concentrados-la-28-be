@@ -11,6 +11,7 @@ import com.co.jarvis.enums.EStatusOrder;
 import com.co.jarvis.enums.EVat;
 import com.co.jarvis.repository.BillingRepository;
 import com.co.jarvis.repository.ProductRepository;
+import com.co.jarvis.dto.UseCreditRequest;
 import com.co.jarvis.service.*;
 import com.co.jarvis.entity.Product;
 import com.co.jarvis.entity.Presentation;
@@ -80,6 +81,12 @@ public class SaleServiceImpl implements SaleService {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private ClientAccountService clientAccountService;
+
+    @Autowired
+    private ClientCreditService clientCreditService;
 
     GenericMapper<Billing, BillingDto> mapper
             = new GenericMapper<>(Billing.class, BillingDto.class);
@@ -184,6 +191,28 @@ public class SaleServiceImpl implements SaleService {
             // Descontar stock de los productos vendidos
             updateStockForSale(dto.getSaleDetails(), savedBilling.getId(), 
                     dto.getCreationUser() != null ? dto.getCreationUser().getId() : null);
+
+            // Si es venta a CRÉDITO, actualizar cuenta por cobrar del cliente
+            if (dto.getSaleType() == EPaymentType.CREDITO && dto.getClient() != null && dto.getClient().getId() != null) {
+                clientAccountService.addDebt(dto.getClient().getId(), dto.getTotalBilling());
+                logger.info("Deuda agregada a cuenta del cliente: {} por monto: {}", 
+                        dto.getClient().getId(), dto.getTotalBilling());
+            }
+
+            // Si se aplica saldo a favor del cliente
+            if (dto.getCreditToApply() != null && dto.getCreditToApply().compareTo(BigDecimal.ZERO) > 0 
+                    && dto.getClient() != null && dto.getClient().getId() != null) {
+                UseCreditRequest useCreditRequest = UseCreditRequest.builder()
+                        .clientId(dto.getClient().getId())
+                        .amount(dto.getCreditToApply())
+                        .billingId(savedBilling.getId())
+                        .notes("Aplicado en factura " + savedBilling.getBillNumber())
+                        .build();
+                clientCreditService.useCredit(useCreditRequest, 
+                        dto.getCreationUser() != null ? dto.getCreationUser().getId() : null);
+                logger.info("Saldo a favor aplicado para cliente: {} por monto: {} en factura: {}", 
+                        dto.getClient().getId(), dto.getCreditToApply(), savedBilling.getBillNumber());
+            }
 
             return mapper.mapToDto(savedBilling);
         } catch (DuplicateRecordException e) {

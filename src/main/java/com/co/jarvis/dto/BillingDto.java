@@ -38,4 +38,5 @@ public class BillingDto implements Serializable {
     private Boolean isReportInvoice;
     private EPaymentType saleType;
     private List<PaymentEntryDto> payments;
+    private BigDecimal creditToApply;
 }
