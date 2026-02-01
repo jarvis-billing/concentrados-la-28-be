@@ -54,4 +54,29 @@ public class Product {
         stock.setQuantity(stock.getQuantity().add(amount));
     }
 
+    /**
+     * Actualiza el costo unitario de una presentación específica.
+     * @param barcode El código de barras que identifica la presentación.
+     * @param newCost El nuevo valor de costPrice.
+     * @return true si se encontró y actualizó, false de lo contrario.
+     */
+    public boolean updatePresentationCost(String barcode, BigDecimal newCost) {
+        if (newCost == null || newCost.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("El costo unitario no puede ser negativo o nulo");
+        }
+
+        if (this.presentations == null || this.presentations.isEmpty()) {
+            return false;
+        }
+
+        return this.presentations.stream()
+                .filter(p -> p.getBarcode().equals(barcode))
+                .findFirst()
+                .map(p -> {
+                    p.setCostPrice(newCost);
+                    return true;
+                })
+                .orElse(false);
+    }
+
 }

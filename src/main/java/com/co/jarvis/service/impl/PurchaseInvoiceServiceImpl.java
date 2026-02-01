@@ -254,6 +254,7 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
 
             // Incrementar stock
             product.increaseStock(stockQuantity);
+            product.updatePresentationCost(item.getPresentationBarcode(), item.getUnitCost());
             
             // Obtener stock después de incrementar
             BigDecimal stockDespues = product.getStock().getQuantity();
