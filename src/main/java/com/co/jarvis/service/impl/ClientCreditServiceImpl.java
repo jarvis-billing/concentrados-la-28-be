@@ -4,6 +4,7 @@ import com.co.jarvis.dto.AdjustCreditRequest;
 import com.co.jarvis.dto.CreditReportFilter;
 import com.co.jarvis.dto.CreditSummary;
 import com.co.jarvis.dto.DepositCreditRequest;
+import com.co.jarvis.dto.ManualCreditRequest;
 import com.co.jarvis.dto.UseCreditRequest;
 import com.co.jarvis.entity.Client;
 import com.co.jarvis.entity.ClientCredit;
@@ -293,5 +294,75 @@ public class ClientCreditServiceImpl implements ClientCreditService {
                 .build();
 
         return clientCreditRepository.save(credit);
+    }
+
+    @Override
+    @Transactional
+    public CreditTransaction registerManualCredit(ManualCreditRequest request, String createdBy) {
+        log.info("ClientCreditServiceImpl -> registerManualCredit: clientId={}, amount={}, date={}", 
+                request.getClientId(), request.getAmount(), request.getTransactionDate());
+
+        // Validar que el monto sea mayor a 0
+        if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("El monto debe ser mayor a 0");
+        }
+
+        // Validar que la fecha no sea nula
+        if (request.getTransactionDate() == null) {
+            throw new RuntimeException("La fecha es requerida");
+        }
+
+        // Validar que la fecha no sea futura
+        if (request.getTransactionDate().isAfter(java.time.LocalDate.now())) {
+            throw new RuntimeException("La fecha no puede ser futura");
+        }
+
+        // Validar que las notas no estén vacías
+        if (request.getNotes() == null || request.getNotes().trim().isEmpty()) {
+            throw new RuntimeException("La descripción es requerida");
+        }
+
+        // Validar que el cliente existe
+        if (!clientRepository.existsById(request.getClientId())) {
+            throw new RuntimeException("Cliente no encontrado");
+        }
+
+        // Buscar o crear el registro ClientCredit del cliente
+        ClientCredit credit = clientCreditRepository.findByClientId(request.getClientId())
+                .orElseGet(() -> createNewCredit(request.getClientId()));
+
+        // Calcular nuevo saldo
+        BigDecimal newBalance = credit.getCurrentBalance().add(request.getAmount());
+
+        // Determinar el source (default: MIGRACION_CUADERNO)
+        String source = request.getSource() != null && !request.getSource().trim().isEmpty() 
+                ? request.getSource() 
+                : "MIGRACION_CUADERNO";
+
+        // Crear la transacción con la fecha del cuaderno (no la fecha actual)
+        LocalDateTime transactionDateTime = request.getTransactionDate().atStartOfDay();
+        
+        CreditTransaction transaction = CreditTransaction.builder()
+                .id(UUID.randomUUID().toString())
+                .type(ECreditTransactionType.DEPOSIT)
+                .amount(request.getAmount())
+                .balanceAfter(newBalance)
+                .notes("[" + source + "] " + request.getNotes())
+                .transactionDate(transactionDateTime)
+                .createdBy(createdBy)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        // Agregar transacción y actualizar saldos
+        credit.getTransactions().add(transaction);
+        credit.setCurrentBalance(newBalance);
+        credit.setTotalDeposited(credit.getTotalDeposited().add(request.getAmount()));
+        credit.setLastTransactionDate(transactionDateTime);
+        credit.setUpdatedAt(LocalDateTime.now());
+
+        clientCreditRepository.save(credit);
+        log.info("Manual credit registered successfully. New balance: {}", credit.getCurrentBalance());
+
+        return transaction;
     }
 }

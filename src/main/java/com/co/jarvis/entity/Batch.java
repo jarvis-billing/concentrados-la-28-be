@@ -29,6 +29,9 @@ public class Batch {
     @Field("product_id")
     private String productId;
 
+    @Field("product_description")
+    private String productDescription;
+
     @Field("entry_date")
     private LocalDate entryDate;
 

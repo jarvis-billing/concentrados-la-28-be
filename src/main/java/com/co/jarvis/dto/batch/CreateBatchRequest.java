@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 @Data
 public class CreateBatchRequest {
     private String productId;
+    private String productDescription;
     private BigDecimal salePrice;
     private Integer initialStock;
     private Integer priceValidityDays;

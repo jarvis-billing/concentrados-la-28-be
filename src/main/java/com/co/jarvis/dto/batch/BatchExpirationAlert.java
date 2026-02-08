@@ -14,4 +14,5 @@ public class BatchExpirationAlert {
     private Batch batch;
     private Integer daysUntilExpiration;
     private Boolean requiresAction;
+    private String productDescription;
 }

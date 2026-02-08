@@ -1,5 +1,6 @@
 package com.co.jarvis.controller;
 
+import com.co.jarvis.dto.AddItemsRequest;
 import com.co.jarvis.dto.PurchaseFilterDto;
 import com.co.jarvis.dto.PurchaseInvoiceDto;
 import com.co.jarvis.dto.SupplierRefDto;
@@ -122,5 +123,27 @@ public class PurchaseInvoiceController {
         
         service.deleteById(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * POST /api/purchases/invoices/{id}/items
+     * Agrega nuevos items a una factura de compra existente.
+     * Los items existentes NO se modifican ni eliminan.
+     * Recalcula el total de la factura y actualiza el stock de productos.
+     */
+    @PostMapping(value = "/{id}/items", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<PurchaseInvoiceDto> addItems(
+        @PathVariable String id,
+        @Valid @RequestBody AddItemsRequest request
+    ) {
+        logger.info("PurchaseInvoiceController -> addItems: {}", id);
+        
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            logger.warn("PurchaseInvoiceController -> addItems -> No se proporcionaron items");
+            return ResponseEntity.badRequest().build();
+        }
+        
+        PurchaseInvoiceDto updatedInvoice = service.addItems(id, request.getItems());
+        return ResponseEntity.ok(updatedInvoice);
     }
 }

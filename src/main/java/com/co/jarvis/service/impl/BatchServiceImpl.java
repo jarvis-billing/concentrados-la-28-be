@@ -107,6 +107,7 @@ public class BatchServiceImpl implements BatchService {
         Batch batch = Batch.builder()
                 .batchNumber(batchNumber)
                 .productId(request.getProductId())
+                .productDescription(request.getProductDescription())
                 .entryDate(entryDate)
                 .salePrice(request.getSalePrice())
                 .initialStock(request.getInitialStock())
@@ -239,6 +240,7 @@ public class BatchServiceImpl implements BatchService {
                             .batch(batch)
                             .daysUntilExpiration(daysUntilExpiration)
                             .requiresAction(daysUntilExpiration <= BatchConstants.BATCH_EXPIRATION_ALERT_DAYS)
+                            .productDescription(batch.getProductDescription())
                             .build();
                 })
                 .sorted(Comparator.comparingInt(BatchExpirationAlert::getDaysUntilExpiration))

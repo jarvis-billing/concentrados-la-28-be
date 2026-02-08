@@ -182,6 +182,67 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
         }
     }
 
+    @Override
+    @Transactional
+    public PurchaseInvoiceDto addItems(String id, List<PurchaseInvoiceItemDto> newItems) {
+        log.info("PurchaseInvoiceServiceImpl -> addItems: {}", id);
+        try {
+            // Buscar la factura por ID
+            PurchaseInvoice invoice = purchaseInvoiceRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Factura no encontrada"));
+
+            // Validar que se proporcionaron items
+            if (newItems == null || newItems.isEmpty()) {
+                throw new SaveRecordException("Debe proporcionar al menos un item");
+            }
+
+            // Validar cada item nuevo
+            for (PurchaseInvoiceItemDto item : newItems) {
+                if (item.getProductId() == null && item.getProductCode() == null) {
+                    throw new SaveRecordException("Cada item debe tener productId o productCode");
+                }
+                if (item.getQuantity() == null || item.getQuantity().compareTo(BigDecimal.ZERO) <= 0) {
+                    throw new SaveRecordException("La cantidad debe ser mayor a cero");
+                }
+                if (item.getUnitCost() == null || item.getUnitCost().compareTo(BigDecimal.ZERO) < 0) {
+                    throw new SaveRecordException("El costo unitario no puede ser negativo");
+                }
+            }
+
+            // Convertir DTOs a entidades y agregar a la factura
+            List<PurchaseInvoiceItem> newItemEntities = newItems.stream()
+                .map(itemMapper::mapToEntity)
+                .collect(Collectors.toList());
+
+            // Agregar nuevos items al array de items existente
+            invoice.getItems().addAll(newItemEntities);
+
+            // Recalcular el total de la factura
+            invoice.setTotalAmount(calculateTotal(invoice.getItems()));
+            invoice.setUpdatedAt(OffsetDateTime.now());
+
+            // Guardar la factura actualizada
+            invoice = purchaseInvoiceRepository.save(invoice);
+
+            // Actualizar stock de productos para los nuevos items
+            updateStockForCreation(newItemEntities);
+
+            log.info("PurchaseInvoiceServiceImpl -> addItems -> {} items agregados a factura {}", 
+                newItems.size(), id);
+            return mapper.mapToDto(invoice);
+
+        } catch (ResourceNotFoundException e) {
+            log.error("PurchaseInvoiceServiceImpl -> addItems -> ERROR: {}", e.getMessage());
+            throw e;
+        } catch (SaveRecordException e) {
+            log.error("PurchaseInvoiceServiceImpl -> addItems -> ERROR: {}", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("PurchaseInvoiceServiceImpl -> addItems -> ERROR: {}", e.getMessage());
+            throw new SaveRecordException("Error al agregar items a la factura: " + e.getMessage());
+        }
+    }
+
     /**
      * Valida los datos básicos de una factura de compra
      */
