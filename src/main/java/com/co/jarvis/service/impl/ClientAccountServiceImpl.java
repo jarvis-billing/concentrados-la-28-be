@@ -3,11 +3,14 @@ package com.co.jarvis.service.impl;
 import com.co.jarvis.dto.AccountReportFilter;
 import com.co.jarvis.dto.AccountSummary;
 import com.co.jarvis.dto.BillingDto;
+import com.co.jarvis.dto.ManualDebtRequest;
 import com.co.jarvis.dto.RegisterPaymentRequest;
 import com.co.jarvis.entity.AccountPayment;
+import com.co.jarvis.entity.AccountTransaction;
 import com.co.jarvis.entity.Billing;
 import com.co.jarvis.entity.Client;
 import com.co.jarvis.entity.ClientAccount;
+import com.co.jarvis.enums.EAccountTransactionType;
 import com.co.jarvis.enums.EPaymentType;
 import com.co.jarvis.repository.ClientAccountRepository;
 import com.co.jarvis.repository.ClientRepository;
@@ -221,10 +224,59 @@ public class ClientAccountServiceImpl implements ClientAccountService {
                 .totalPaid(BigDecimal.ZERO)
                 .currentBalance(BigDecimal.ZERO)
                 .payments(new ArrayList<>())
+                .transactions(new ArrayList<>())
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
 
         return clientAccountRepository.save(account);
+    }
+
+    @Override
+    @Transactional
+    public AccountTransaction registerManualDebt(ManualDebtRequest request, String createdBy) {
+        log.info("ClientAccountServiceImpl -> registerManualDebt: clientId={}, amount={}", 
+                request.getClientId(), request.getAmount());
+
+        if (request.getClientId() == null || request.getClientId().isEmpty()) {
+            throw new IllegalArgumentException("El ID del cliente es requerido");
+        }
+
+        if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("El monto debe ser mayor a cero");
+        }
+
+        if (request.getTransactionDate() == null) {
+            throw new IllegalArgumentException("La fecha de transacción es requerida");
+        }
+
+        if (request.getNotes() == null || request.getNotes().isEmpty()) {
+            throw new IllegalArgumentException("La descripción es requerida");
+        }
+
+        ClientAccount account = clientAccountRepository.findByClientId(request.getClientId())
+                .orElseGet(() -> createNewAccount(request.getClientId()));
+
+        account.setTotalDebt(account.getTotalDebt().add(request.getAmount()));
+        account.setCurrentBalance(account.getTotalDebt().subtract(account.getTotalPaid()));
+        account.setUpdatedAt(LocalDateTime.now());
+
+        AccountTransaction transaction = AccountTransaction.builder()
+                .id(UUID.randomUUID().toString())
+                .type(EAccountTransactionType.MANUAL_DEBT)
+                .amount(request.getAmount())
+                .balanceAfter(account.getCurrentBalance())
+                .notes(request.getNotes())
+                .source(request.getSource())
+                .transactionDate(request.getTransactionDate())
+                .createdBy(createdBy)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        account.getTransactions().add(transaction);
+        clientAccountRepository.save(account);
+        
+        log.info("Manual debt registered successfully. New balance: {}", account.getCurrentBalance());
+        return transaction;
     }
 }

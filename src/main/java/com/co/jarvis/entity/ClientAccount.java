@@ -50,6 +50,9 @@ public class ClientAccount {
     @Builder.Default
     private List<AccountPayment> payments = new ArrayList<>();
 
+    @Builder.Default
+    private List<AccountTransaction> transactions = new ArrayList<>();
+
     @Version
     private Long version;
 }

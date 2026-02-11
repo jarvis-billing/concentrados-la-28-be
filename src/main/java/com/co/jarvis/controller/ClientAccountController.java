@@ -3,8 +3,10 @@ package com.co.jarvis.controller;
 import com.co.jarvis.dto.AccountReportFilter;
 import com.co.jarvis.dto.AccountSummary;
 import com.co.jarvis.dto.BillingDto;
+import com.co.jarvis.dto.ManualDebtRequest;
 import com.co.jarvis.dto.RegisterPaymentRequest;
 import com.co.jarvis.entity.AccountPayment;
+import com.co.jarvis.entity.AccountTransaction;
 import com.co.jarvis.entity.ClientAccount;
 import com.co.jarvis.service.ClientAccountService;
 import lombok.RequiredArgsConstructor;
@@ -81,5 +83,25 @@ public class ClientAccountController {
         log.info("ClientAccountController -> generateReport");
         List<AccountSummary> report = clientAccountService.generateReport(filter);
         return ResponseEntity.ok(report);
+    }
+
+    @PostMapping("/manual-debt")
+    public ResponseEntity<AccountTransaction> registerManualDebt(
+            @RequestBody ManualDebtRequest request,
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        log.info("ClientAccountController -> registerManualDebt: clientId={}, amount={}", 
+                request.getClientId(), request.getAmount());
+        try {
+            AccountTransaction transaction = clientAccountService.registerManualDebt(request, userId);
+            return ResponseEntity.ok(transaction);
+        } catch (IllegalArgumentException e) {
+            log.warn("Bad request for manual debt: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        } catch (RuntimeException e) {
+            if (e.getMessage() != null && e.getMessage().contains("Cliente no encontrado")) {
+                return ResponseEntity.notFound().build();
+            }
+            throw e;
+        }
     }
 }
