@@ -16,7 +16,9 @@ import com.co.jarvis.service.*;
 import com.co.jarvis.entity.Product;
 import com.co.jarvis.entity.Presentation;
 import com.co.jarvis.enums.ESale;
+import com.co.jarvis.dto.batch.BatchSaleRequest;
 import com.co.jarvis.util.DateTimeUtil;
+import com.co.jarvis.util.constants.BatchConstants;
 import com.co.jarvis.util.exception.*;
 import com.co.jarvis.util.mappers.GenericMapper;
 import com.co.jarvis.util.mensajes.MessageConstants;
@@ -87,6 +89,9 @@ public class SaleServiceImpl implements SaleService {
 
     @Autowired
     private ClientCreditService clientCreditService;
+
+    @Autowired
+    private BatchService batchService;
 
     GenericMapper<Billing, BillingDto> mapper
             = new GenericMapper<>(Billing.class, BillingDto.class);
@@ -532,6 +537,20 @@ public class SaleServiceImpl implements SaleService {
 
             // Registrar movimiento de venta y descontar stock
             inventoryService.registerSaleMovement(billingId, productId, stockQuantity, barcode, userId);
+
+            // Si el producto es de categoría ANIMALES VIVOS y tiene batchId, descontar stock del lote
+            if (detail.getBatchId() != null && !detail.getBatchId().isBlank()
+                    && BatchConstants.BATCH_REQUIRED_CATEGORY.equalsIgnoreCase(product.getCategory())) {
+                int batchQuantity = amount.intValue();
+                logger.info("Descontando lote {} para producto ANIMALES VIVOS: cantidad={}",
+                        detail.getBatchId(), batchQuantity);
+                BatchSaleRequest batchSaleRequest = BatchSaleRequest.builder()
+                        .batchId(detail.getBatchId())
+                        .quantity(batchQuantity)
+                        .billingId(billingId)
+                        .build();
+                batchService.registerSale(batchSaleRequest);
+            }
         }
     }
 

@@ -217,8 +217,8 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             // Agregar nuevos items al array de items existente
             invoice.getItems().addAll(newItemEntities);
 
-            // Recalcular el total de la factura
-            invoice.setTotalAmount(calculateTotal(invoice.getItems()));
+            // Recalcular totales de la factura
+            recalculateInvoiceTotals(invoice);
             invoice.setUpdatedAt(OffsetDateTime.now());
 
             // Guardar la factura actualizada
@@ -265,21 +265,66 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
     }
 
     /**
-     * Calcula el total de la factura sumando los totalCost de los items
+     * Calcula el total de la factura: subtotal + totalVat + freightCost.
+     * subtotal = Σ(unitCost × quantity) sin IVA ni flete.
+     * totalVat = Σ vatAmount de los ítems.
+     * freightCost = Σ freightAmount de los ítems con applyFreight=true.
      */
     private BigDecimal calculateTotal(List<PurchaseInvoiceItem> items) {
         if (items == null || items.isEmpty()) {
             return BigDecimal.ZERO;
         }
-        return items.stream()
-            .map(item -> {
-                BigDecimal total = item.getTotalCost();
-                if (total == null) {
-                    total = item.getQuantity().multiply(item.getUnitCost());
-                }
-                return total;
-            })
+        BigDecimal subtotal = items.stream()
+            .map(item -> item.getUnitCost() != null && item.getQuantity() != null
+                ? item.getUnitCost().multiply(item.getQuantity())
+                : BigDecimal.ZERO)
             .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalVat = items.stream()
+            .map(item -> item.getVatAmount() != null ? item.getVatAmount() : BigDecimal.ZERO)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal freightCost = items.stream()
+            .filter(item -> Boolean.TRUE.equals(item.getApplyFreight()))
+            .map(item -> item.getFreightAmount() != null ? item.getFreightAmount() : BigDecimal.ZERO)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return subtotal.add(totalVat).add(freightCost);
+    }
+
+    /**
+     * Recalcula y actualiza subtotal, totalVat y freightCost en la entidad factura
+     * a partir de sus ítems.
+     */
+    private void recalculateInvoiceTotals(PurchaseInvoice invoice) {
+        List<PurchaseInvoiceItem> items = invoice.getItems();
+        if (items == null || items.isEmpty()) {
+            invoice.setSubtotal(BigDecimal.ZERO);
+            invoice.setTotalVat(BigDecimal.ZERO);
+            invoice.setFreightCost(BigDecimal.ZERO);
+            invoice.setTotalAmount(BigDecimal.ZERO);
+            return;
+        }
+
+        BigDecimal subtotal = items.stream()
+            .map(item -> item.getUnitCost() != null && item.getQuantity() != null
+                ? item.getUnitCost().multiply(item.getQuantity())
+                : BigDecimal.ZERO)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalVat = items.stream()
+            .map(item -> item.getVatAmount() != null ? item.getVatAmount() : BigDecimal.ZERO)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal freightCost = items.stream()
+            .filter(item -> Boolean.TRUE.equals(item.getApplyFreight()))
+            .map(item -> item.getFreightAmount() != null ? item.getFreightAmount() : BigDecimal.ZERO)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        invoice.setSubtotal(subtotal);
+        invoice.setTotalVat(totalVat);
+        invoice.setFreightCost(freightCost);
+        invoice.setTotalAmount(subtotal.add(totalVat).add(freightCost));
     }
 
     /**

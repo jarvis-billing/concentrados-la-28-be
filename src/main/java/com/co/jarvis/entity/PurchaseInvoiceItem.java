@@ -19,4 +19,14 @@ public class PurchaseInvoiceItem {
     private BigDecimal quantity;
     private BigDecimal unitCost;
     private BigDecimal totalCost;
+    @Builder.Default
+    private BigDecimal vatRate = BigDecimal.ZERO;
+    @Builder.Default
+    private BigDecimal vatAmount = BigDecimal.ZERO;
+    @Builder.Default
+    private Boolean applyFreight = false;
+    @Builder.Default
+    private BigDecimal totalWeightKg = BigDecimal.ZERO;
+    @Builder.Default
+    private BigDecimal freightAmount = BigDecimal.ZERO;
 }

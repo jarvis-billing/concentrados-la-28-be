@@ -31,4 +31,5 @@ public class Supplier {
     private String address;
     @Indexed
     private SupplierStatus status;
+    private Integer defaultVatRate;
 }

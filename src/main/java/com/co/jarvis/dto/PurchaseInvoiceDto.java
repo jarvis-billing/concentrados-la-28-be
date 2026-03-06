@@ -25,6 +25,10 @@ public class PurchaseInvoiceDto implements Serializable {
     private EPaymentType paymentType;
     private OffsetDateTime date;
     private List<PurchaseInvoiceItemDto> items;
+    private BigDecimal subtotal;
+    private BigDecimal totalVat;
+    private BigDecimal freightRate;
+    private BigDecimal freightCost;
     private BigDecimal totalAmount;
     private EPurchaseInvoiceStatus status;
     private UserDto creationUser;

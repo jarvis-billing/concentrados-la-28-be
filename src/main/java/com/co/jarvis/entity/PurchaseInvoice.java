@@ -43,6 +43,18 @@ public class PurchaseInvoice {
     @Field("items")
     private List<PurchaseInvoiceItem> items;
     
+    @Field("subtotal")
+    private BigDecimal subtotal;
+    
+    @Field("total_vat")
+    private BigDecimal totalVat;
+    
+    @Field("freight_rate")
+    private BigDecimal freightRate;
+    
+    @Field("freight_cost")
+    private BigDecimal freightCost;
+    
     @Field("total_amount")
     private BigDecimal totalAmount;
     

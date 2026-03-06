@@ -20,4 +20,9 @@ public class PurchaseInvoiceItemDto implements Serializable {
     private BigDecimal quantity;
     private BigDecimal unitCost;
     private BigDecimal totalCost;
+    private BigDecimal vatRate;
+    private BigDecimal vatAmount;
+    private Boolean applyFreight;
+    private BigDecimal totalWeightKg;
+    private BigDecimal freightAmount;
 }

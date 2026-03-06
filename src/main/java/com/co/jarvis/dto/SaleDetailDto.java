@@ -20,4 +20,5 @@ public class SaleDetailDto {
     private BigDecimal unitPrice;
     private BigDecimal subTotal;
     private BigDecimal totalVat;
+    private String batchId;
 }

@@ -22,4 +22,5 @@ public class SupplierDto implements Serializable {
     private String email;
     private String address;
     private SupplierStatus status;
+    private Integer defaultVatRate;
 }
