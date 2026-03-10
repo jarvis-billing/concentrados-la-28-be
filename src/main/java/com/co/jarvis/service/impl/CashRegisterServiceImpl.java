@@ -5,6 +5,7 @@ import com.co.jarvis.entity.*;
 import com.co.jarvis.enums.*;
 import com.co.jarvis.repository.*;
 import com.co.jarvis.service.CashRegisterService;
+import com.co.jarvis.util.DateTimeUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -18,7 +19,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -174,9 +174,10 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         session.setExpectedOtherAmount(dailySummary.getExpectedOtherAmount());
 
         // Calcular diferencia de efectivo
-        // Efectivo esperado = saldo apertura + ingresos efectivo - egresos efectivo
+        // Efectivo esperado = saldo apertura + neto efectivo (ingresos - egresos en efectivo)
         BigDecimal expectedCashTotal = request.getOpeningBalance()
                 .add(dailySummary.getExpectedCashAmount());
+        session.setExpectedCashTotal(expectedCashTotal);
         session.setCashDifference(totalCounted.subtract(expectedCashTotal));
 
         // Calcular flujo neto
@@ -300,8 +301,8 @@ public class CashRegisterServiceImpl implements CashRegisterService {
     // ==================== Métodos privados ====================
 
     private List<CashTransactionDto> getSalesTransactions(LocalDate date) {
-        OffsetDateTime startOfDay = date.atStartOfDay().atOffset(ZoneOffset.UTC);
-        OffsetDateTime endOfDay = date.atTime(LocalTime.MAX).atOffset(ZoneOffset.UTC);
+        OffsetDateTime startOfDay = date.atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime();
+        OffsetDateTime endOfDay = date.atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime();
 
         // Solo ventas de CONTADO - las ventas a crédito se registran cuando el cliente paga
         Query query = new Query(Criteria.where("dateTimeRecord").gte(startOfDay).lte(endOfDay)
@@ -341,6 +342,21 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                         .description("Venta #" + billing.getBillNumber())
                         .amount(billing.getTotalBilling())
                         .paymentMethod(paymentMethod)
+                        .transactionDate(billing.getDateTimeRecord().toLocalDateTime())
+                        .relatedDocumentId(billing.getId())
+                        .build());
+            }
+
+            // Registrar el cambio/vuelto entregado como egreso en efectivo
+            if (billing.getReturnedValue() != null && 
+                    billing.getReturnedValue().compareTo(BigDecimal.ZERO) > 0) {
+                transactions.add(CashTransactionDto.builder()
+                        .id(billing.getId() + "-cambio")
+                        .type(ETransactionType.EGRESO)
+                        .category(ETransactionCategory.AJUSTE)
+                        .description("Cambio venta #" + billing.getBillNumber())
+                        .amount(billing.getReturnedValue())
+                        .paymentMethod(EPaymentMethod.EFECTIVO)
                         .transactionDate(billing.getDateTimeRecord().toLocalDateTime())
                         .relatedDocumentId(billing.getId())
                         .build());
@@ -429,8 +445,8 @@ public class CashRegisterServiceImpl implements CashRegisterService {
     }
 
     private List<CashTransactionDto> getExpenseTransactions(LocalDate date) {
-        OffsetDateTime startOfDay = date.atStartOfDay().atOffset(ZoneOffset.UTC);
-        OffsetDateTime endOfDay = date.atTime(LocalTime.MAX).atOffset(ZoneOffset.UTC);
+        OffsetDateTime startOfDay = date.atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime();
+        OffsetDateTime endOfDay = date.atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime();
 
         Query query = new Query(Criteria.where("dateTimeRecord").gte(startOfDay).lte(endOfDay));
         List<Expense> expenses = mongoTemplate.find(query, Expense.class);
@@ -536,6 +552,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .cashDenominations(denominationDtos)
                 .totalCashCounted(session.getTotalCashCounted())
                 .expectedCashAmount(session.getExpectedCashAmount())
+                .expectedCashTotal(session.getExpectedCashTotal())
                 .expectedTransferAmount(session.getExpectedTransferAmount())
                 .expectedOtherAmount(session.getExpectedOtherAmount())
                 .cashDifference(session.getCashDifference())

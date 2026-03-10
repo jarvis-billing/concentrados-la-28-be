@@ -23,6 +23,7 @@ public class CashCountSessionDto implements Serializable {
     private List<CashDenominationDto> cashDenominations;
     private BigDecimal totalCashCounted;
     private BigDecimal expectedCashAmount;
+    private BigDecimal expectedCashTotal;
     private BigDecimal expectedTransferAmount;
     private BigDecimal expectedOtherAmount;
     private BigDecimal cashDifference;

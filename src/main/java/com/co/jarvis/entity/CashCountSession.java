@@ -37,10 +37,11 @@ public class CashCountSession {
     private List<CashDenomination> cashDenominations = new ArrayList<>();  // Denominaciones contadas
 
     private BigDecimal totalCashCounted;        // Total efectivo contado (suma de denominaciones)
-    private BigDecimal expectedCashAmount;      // Efectivo esperado según transacciones
+    private BigDecimal expectedCashAmount;      // Neto efectivo del día (ingresos - egresos en efectivo)
+    private BigDecimal expectedCashTotal;       // Efectivo total esperado en caja = openingBalance + expectedCashAmount
     private BigDecimal expectedTransferAmount;  // Transferencias esperadas
     private BigDecimal expectedOtherAmount;     // Otros métodos de pago esperados
-    private BigDecimal cashDifference;          // Diferencia entre contado y esperado
+    private BigDecimal cashDifference;          // Diferencia entre contado y esperado (totalCashCounted - expectedCashTotal)
 
     private BigDecimal totalIncome;             // Total ingresos del día
     private BigDecimal totalExpense;            // Total egresos del día
