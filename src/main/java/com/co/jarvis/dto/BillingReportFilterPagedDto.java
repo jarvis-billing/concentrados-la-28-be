@@ -5,33 +5,26 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDate;
+import java.io.Serializable;
 
 @Data
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
-public class BillingReportFilterDto {
+public class BillingReportFilterPagedDto implements Serializable {
 
-    private LocalDate fromDate;
-
-    private LocalDate toDate;
-
+    private String fromDate;
+    private String toDate;
     private String billNumber;
-
     private String userSale;
-
     private String client;
-
-    private String clientField;
-
     private String product;
-
-    private String productField;
-
+    private String saleType;
     private String paymentMethod;
 
-    public boolean hasFilterDate() {
-        return toDate != null && fromDate != null;
-    }
+    @Builder.Default
+    private int page = 0;
+
+    @Builder.Default
+    private int size = 20;
 }

@@ -28,6 +28,10 @@ import net.sf.jasperreports.engine.JRException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -333,6 +337,13 @@ public class SaleServiceImpl implements SaleService {
                 criteriaList.add(Criteria.where("client.idNumber").is(dto.getClient()));
             }
 
+            // Filtro por método de pago
+            if (dto.getPaymentMethod() != null && !dto.getPaymentMethod().isEmpty()) {
+                criteriaList.add(new Criteria().orOperator(
+                        Criteria.where("payments.method").is(dto.getPaymentMethod()),
+                        Criteria.where("paymentMethods").is(dto.getPaymentMethod())));
+            }
+
             // Construir el criterio final combinando todas las condiciones con AND
             Criteria finalCriteria = new Criteria();
             if (!criteriaList.isEmpty()) {
@@ -351,6 +362,177 @@ public class SaleServiceImpl implements SaleService {
             logger.error("SaleServiceImpl -> findAllBilling -> Error {}", e.getMessage());
             throw new GenericInternalException(e.getMessage());
         }
+    }
+
+    @Override
+    public Page<BillingDto> findAllBillingPaged(BillingReportFilterPagedDto dto) {
+        try {
+            logger.info("SaleServiceImpl -> findAllBillingPaged: page={}, size={}", dto.getPage(), dto.getSize());
+            List<Criteria> criteriaList = buildCriteriaFromPagedFilter(dto);
+
+            Criteria finalCriteria = criteriaList.isEmpty()
+                    ? new Criteria()
+                    : new Criteria().andOperator(criteriaList.toArray(new Criteria[0]));
+
+            Pageable pageable = PageRequest.of(dto.getPage(), dto.getSize(),
+                    Sort.by(Sort.Direction.DESC, "dateTimeRecord"));
+
+            Query countQuery = new Query(finalCriteria);
+            long total = mongoTemplate.count(countQuery, Billing.class);
+
+            Query query = new Query(finalCriteria)
+                    .with(pageable);
+            List<Billing> results = mongoTemplate.find(query, Billing.class);
+
+            List<BillingDto> dtos = mapper.mapToDtoList(results);
+            return new PageImpl<>(dtos, pageable, total);
+        } catch (Exception e) {
+            logger.error("SaleServiceImpl -> findAllBillingPaged -> Error {}", e.getMessage());
+            throw new GenericInternalException(e.getMessage());
+        }
+    }
+
+    @Override
+    public SalesTotalsResponse getSalesTotals(BillingReportFilterDto dto) {
+        try {
+            logger.info("SaleServiceImpl -> getSalesTotals");
+            List<Criteria> criteriaList = new ArrayList<>();
+
+            if (dto.hasFilterDate()) {
+                criteriaList.add(Criteria.where("dateTimeRecord")
+                        .gte(dto.getToDate().atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime())
+                        .lte(dto.getFromDate().atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime()));
+            }
+            if (dto.getBillNumber() != null && !dto.getBillNumber().isEmpty()) {
+                criteriaList.add(Criteria.where("billNumber").regex(".*" + dto.getBillNumber() + ".*", "i"));
+            }
+            if (dto.getUserSale() != null && !dto.getUserSale().isEmpty()) {
+                criteriaList.add(Criteria.where("order.creationUser.numberIdentity").is(dto.getUserSale()));
+            }
+            if (dto.getClient() != null && !dto.getClient().isEmpty()) {
+                criteriaList.add(Criteria.where("client.idNumber").is(dto.getClient()));
+            }
+            if (dto.getPaymentMethod() != null && !dto.getPaymentMethod().isEmpty()) {
+                criteriaList.add(new Criteria().orOperator(
+                        Criteria.where("payments.method").is(dto.getPaymentMethod()),
+                        Criteria.where("paymentMethods").is(dto.getPaymentMethod())));
+            }
+
+            Criteria finalCriteria = criteriaList.isEmpty()
+                    ? new Criteria()
+                    : new Criteria().andOperator(criteriaList.toArray(new Criteria[0]));
+
+            Query query = new Query(finalCriteria);
+            List<Billing> billings = mongoTemplate.find(query, Billing.class);
+
+            BigDecimal totalSubtotal = BigDecimal.ZERO;
+            BigDecimal totalIva = BigDecimal.ZERO;
+            BigDecimal totalGeneral = BigDecimal.ZERO;
+            BigDecimal totalContado = BigDecimal.ZERO;
+            BigDecimal totalCredito = BigDecimal.ZERO;
+            long countContado = 0;
+            long countCredito = 0;
+
+            java.util.Map<String, long[]> methodMap = new java.util.LinkedHashMap<>();
+
+            for (Billing b : billings) {
+                BigDecimal total = b.getTotalBilling() != null ? b.getTotalBilling() : BigDecimal.ZERO;
+                BigDecimal subtotal = b.getSubTotalSale() != null ? b.getSubTotalSale() : BigDecimal.ZERO;
+                BigDecimal iva = b.getTotalIVAT() != null ? b.getTotalIVAT() : BigDecimal.ZERO;
+
+                totalSubtotal = totalSubtotal.add(subtotal);
+                totalIva = totalIva.add(iva);
+                totalGeneral = totalGeneral.add(total);
+
+                if (b.getSaleType() == EPaymentType.CONTADO) {
+                    countContado++;
+                    totalContado = totalContado.add(total);
+                } else {
+                    countCredito++;
+                    totalCredito = totalCredito.add(total);
+                }
+
+                if (b.getPayments() != null && !b.getPayments().isEmpty()) {
+                    for (com.co.jarvis.entity.PaymentEntry p : b.getPayments()) {
+                        String method = p.getMethod() != null ? p.getMethod() : "EFECTIVO";
+                        methodMap.computeIfAbsent(method, k -> new long[2]);
+                        methodMap.get(method)[0]++;
+                        methodMap.get(method)[1] += p.getAmount() != null ? p.getAmount().longValue() : 0;
+                    }
+                } else if (b.getPaymentMethods() != null && !b.getPaymentMethods().isEmpty()) {
+                    String method = b.getPaymentMethods().get(0).name();
+                    methodMap.computeIfAbsent(method, k -> new long[2]);
+                    methodMap.get(method)[0]++;
+                    methodMap.get(method)[1] += total.longValue();
+                }
+            }
+
+            List<SalesTotalsResponse.PaymentMethodTotalDto> paymentMethodTotals = methodMap.entrySet().stream()
+                    .map(e -> SalesTotalsResponse.PaymentMethodTotalDto.builder()
+                            .method(e.getKey())
+                            .count(e.getValue()[0])
+                            .total(BigDecimal.valueOf(e.getValue()[1]))
+                            .build())
+                    .collect(java.util.stream.Collectors.toList());
+
+            return SalesTotalsResponse.builder()
+                    .totalInvoices(billings.size())
+                    .totalSubtotal(totalSubtotal)
+                    .totalIva(totalIva)
+                    .totalGeneral(totalGeneral)
+                    .countContado(countContado)
+                    .countCredito(countCredito)
+                    .totalContado(totalContado)
+                    .totalCredito(totalCredito)
+                    .paymentMethodTotals(paymentMethodTotals)
+                    .build();
+        } catch (Exception e) {
+            logger.error("SaleServiceImpl -> getSalesTotals -> Error {}", e.getMessage());
+            throw new GenericInternalException(e.getMessage());
+        }
+    }
+
+    private List<Criteria> buildCriteriaFromPagedFilter(BillingReportFilterPagedDto dto) {
+        List<Criteria> criteriaList = new ArrayList<>();
+
+        // Rango de fechas — default últimos 30 días si no se especifica
+        if (dto.getFromDate() != null && !dto.getFromDate().isBlank()
+                && dto.getToDate() != null && !dto.getToDate().isBlank()) {
+            java.time.LocalDate from = java.time.LocalDate.parse(dto.getFromDate());
+            java.time.LocalDate to = java.time.LocalDate.parse(dto.getToDate());
+            criteriaList.add(Criteria.where("dateTimeRecord")
+                    .gte(to.atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime())
+                    .lte(from.atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime()));
+        } else {
+            java.time.LocalDate defaultFrom = java.time.LocalDate.now(DateTimeUtil.getBogotaZone());
+            java.time.LocalDate defaultTo = defaultFrom.minusDays(30);
+            criteriaList.add(Criteria.where("dateTimeRecord")
+                    .gte(defaultTo.atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime())
+                    .lte(defaultFrom.atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime()));
+        }
+
+        if (dto.getBillNumber() != null && !dto.getBillNumber().isBlank()) {
+            criteriaList.add(Criteria.where("billNumber").regex(".*" + dto.getBillNumber() + ".*", "i"));
+        }
+        if (dto.getUserSale() != null && !dto.getUserSale().isBlank()) {
+            criteriaList.add(Criteria.where("order.creationUser.numberIdentity").is(dto.getUserSale()));
+        }
+        if (dto.getClient() != null && !dto.getClient().isBlank()) {
+            criteriaList.add(Criteria.where("client.id").is(dto.getClient()));
+        }
+        if (dto.getProduct() != null && !dto.getProduct().isBlank()) {
+            criteriaList.add(Criteria.where("saleDetails.product.id").is(dto.getProduct()));
+        }
+        if (dto.getSaleType() != null && !dto.getSaleType().isBlank()) {
+            criteriaList.add(Criteria.where("saleType").is(dto.getSaleType()));
+        }
+        if (dto.getPaymentMethod() != null && !dto.getPaymentMethod().isBlank()) {
+            criteriaList.add(new Criteria().orOperator(
+                    Criteria.where("payments.method").is(dto.getPaymentMethod()),
+                    Criteria.where("paymentMethods").is(dto.getPaymentMethod())));
+        }
+
+        return criteriaList;
     }
 
     @Override

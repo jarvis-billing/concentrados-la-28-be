@@ -2,12 +2,15 @@ package com.co.jarvis.controller;
 
 import com.co.jarvis.dto.BillingDto;
 import com.co.jarvis.dto.BillingReportFilterDto;
+import com.co.jarvis.dto.BillingReportFilterPagedDto;
 import com.co.jarvis.dto.ProductSalesSummary;
+import com.co.jarvis.dto.SalesTotalsResponse;
 import com.co.jarvis.service.SaleService;
 import com.co.jarvis.util.exception.FieldsException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -73,6 +76,20 @@ public class SaleController extends GenericController<BillingDto, SaleService> {
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(service.findAllBilling(dto));
+    }
+
+    @PostMapping(value = "/report/list-sales-paged", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Page<BillingDto>> findAllBillingPaged(@RequestBody BillingReportFilterPagedDto dto) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(service.findAllBillingPaged(dto));
+    }
+
+    @PostMapping(value = "/report/sales-totals", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<SalesTotalsResponse> getSalesTotals(@RequestBody BillingReportFilterDto dto) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(service.getSalesTotals(dto));
     }
 
     @PostMapping(value = "/report/product/summary", produces = MediaType.APPLICATION_JSON_VALUE)

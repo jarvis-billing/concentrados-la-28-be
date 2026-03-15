@@ -31,6 +31,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
     private final SupplierPaymentRepository supplierPaymentRepository;
     private final ClientCreditRepository clientCreditRepository;
     private final ClientAccountRepository clientAccountRepository;
+    private final CashLoanRepository cashLoanRepository;
     private final MongoTemplate mongoTemplate;
 
     // Denominaciones colombianas
@@ -71,6 +72,9 @@ public class CashRegisterServiceImpl implements CashRegisterService {
 
         // 5. Obtener pagos a proveedores
         transactions.addAll(getSupplierPaymentTransactions(date));
+
+        // 6. Obtener préstamos de caja del día
+        transactions.addAll(getCashLoanTransactions(date));
 
         // Calcular resúmenes por método de pago
         List<PaymentMethodSummaryDto> paymentMethodSummaries = calculatePaymentMethodSummaries(transactions);
@@ -484,6 +488,49 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                         .relatedDocumentId(payment.getId())
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    private List<CashTransactionDto> getCashLoanTransactions(LocalDate date) {
+        List<CashTransactionDto> transactions = new ArrayList<>();
+        List<CashLoan> loans = cashLoanRepository.findByLoanDate(date);
+
+        for (CashLoan loan : loans) {
+            if (loan.getStatus() == ECashLoanStatus.ANULADO) {
+                continue;
+            }
+            // Préstamo: egreso de efectivo el día que se tomó
+            transactions.add(CashTransactionDto.builder()
+                    .id(loan.getId() + "-prestamo")
+                    .type(ETransactionType.EGRESO)
+                    .category(ETransactionCategory.AJUSTE)
+                    .description("Préstamo caja - " + loan.getBorrower()
+                            + (loan.getReason() != null ? " (" + loan.getReason() + ")" : ""))
+                    .amount(loan.getAmount())
+                    .paymentMethod(EPaymentMethod.EFECTIVO)
+                    .transactionDate(date.atStartOfDay())
+                    .relatedDocumentId(loan.getId())
+                    .build());
+        }
+
+        // Devoluciones: ingreso de efectivo el día en que se devolvió
+        List<CashLoan> returned = cashLoanRepository.findByStatus(ECashLoanStatus.DEVUELTO);
+        for (CashLoan loan : returned) {
+            if (loan.getReturnDate() != null && loan.getReturnDate().equals(date)
+                    && loan.getReturnedAmount() != null) {
+                transactions.add(CashTransactionDto.builder()
+                        .id(loan.getId() + "-devolucion")
+                        .type(ETransactionType.INGRESO)
+                        .category(ETransactionCategory.AJUSTE)
+                        .description("Devolución préstamo - " + loan.getBorrower())
+                        .amount(loan.getReturnedAmount())
+                        .paymentMethod(EPaymentMethod.EFECTIVO)
+                        .transactionDate(date.atStartOfDay())
+                        .relatedDocumentId(loan.getId())
+                        .build());
+            }
+        }
+
+        return transactions;
     }
 
     private List<PaymentMethodSummaryDto> calculatePaymentMethodSummaries(List<CashTransactionDto> transactions) {
