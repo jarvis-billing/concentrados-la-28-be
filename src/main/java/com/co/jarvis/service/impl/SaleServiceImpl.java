@@ -337,6 +337,11 @@ public class SaleServiceImpl implements SaleService {
                 criteriaList.add(Criteria.where("client.idNumber").is(dto.getClient()));
             }
 
+            // Filtro por tipo de venta
+            if (dto.getSaleType() != null && !dto.getSaleType().isEmpty()) {
+                criteriaList.add(Criteria.where("saleType").is(dto.getSaleType()));
+            }
+
             // Filtro por método de pago
             if (dto.getPaymentMethod() != null && !dto.getPaymentMethod().isEmpty()) {
                 criteriaList.add(new Criteria().orOperator(

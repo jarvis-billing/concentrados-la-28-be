@@ -31,6 +31,8 @@ public class BillingReportFilterDto {
 
     private String paymentMethod;
 
+    private String saleType;
+
     public boolean hasFilterDate() {
         return toDate != null && fromDate != null;
     }
