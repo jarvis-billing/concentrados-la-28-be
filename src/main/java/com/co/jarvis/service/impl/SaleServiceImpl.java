@@ -317,9 +317,11 @@ public class SaleServiceImpl implements SaleService {
 
             // Filtro por rango de fechas
             if (dto.hasFilterDate()) {
+                java.time.LocalDate startDate = dto.getFromDate().isBefore(dto.getToDate()) ? dto.getFromDate() : dto.getToDate();
+                java.time.LocalDate endDate = dto.getFromDate().isAfter(dto.getToDate()) ? dto.getFromDate() : dto.getToDate();
                 criteriaList.add(Criteria.where("dateTimeRecord")
-                        .gte(dto.getToDate().atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime())
-                        .lte(dto.getFromDate().atTime(LocalTime.now()).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime()));
+                        .gte(startDate.atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime())
+                        .lte(endDate.atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime()));
             }
 
             // Filtro por numero de factura
@@ -334,7 +336,18 @@ public class SaleServiceImpl implements SaleService {
 
             // Filtro por cliente
             if (dto.getClient() != null && !dto.getClient().isEmpty()) {
-                criteriaList.add(Criteria.where("client.idNumber").is(dto.getClient()));
+                String clientField = (dto.getClientField() != null && !dto.getClientField().isEmpty())
+                        ? "client." + dto.getClientField()
+                        : "client._id";
+                criteriaList.add(Criteria.where(clientField).is(dto.getClient()));
+            }
+
+            // Filtro por producto
+            if (dto.getProduct() != null && !dto.getProduct().isEmpty()) {
+                String productField = (dto.getProductField() != null && !dto.getProductField().isEmpty())
+                        ? "saleDetails.product." + dto.getProductField()
+                        : "saleDetails.product._id";
+                criteriaList.add(Criteria.where(productField).is(dto.getProduct()));
             }
 
             // Filtro por tipo de venta
@@ -404,9 +417,11 @@ public class SaleServiceImpl implements SaleService {
             List<Criteria> criteriaList = new ArrayList<>();
 
             if (dto.hasFilterDate()) {
+                java.time.LocalDate startDate = dto.getFromDate().isBefore(dto.getToDate()) ? dto.getFromDate() : dto.getToDate();
+                java.time.LocalDate endDate = dto.getFromDate().isAfter(dto.getToDate()) ? dto.getFromDate() : dto.getToDate();
                 criteriaList.add(Criteria.where("dateTimeRecord")
-                        .gte(dto.getToDate().atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime())
-                        .lte(dto.getFromDate().atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime()));
+                        .gte(startDate.atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime())
+                        .lte(endDate.atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime()));
             }
             if (dto.getBillNumber() != null && !dto.getBillNumber().isEmpty()) {
                 criteriaList.add(Criteria.where("billNumber").regex(".*" + dto.getBillNumber() + ".*", "i"));
@@ -415,7 +430,19 @@ public class SaleServiceImpl implements SaleService {
                 criteriaList.add(Criteria.where("order.creationUser.numberIdentity").is(dto.getUserSale()));
             }
             if (dto.getClient() != null && !dto.getClient().isEmpty()) {
-                criteriaList.add(Criteria.where("client.idNumber").is(dto.getClient()));
+                String clientField = (dto.getClientField() != null && !dto.getClientField().isEmpty())
+                        ? "client." + dto.getClientField()
+                        : "client._id";
+                criteriaList.add(Criteria.where(clientField).is(dto.getClient()));
+            }
+            if (dto.getProduct() != null && !dto.getProduct().isEmpty()) {
+                String productField = (dto.getProductField() != null && !dto.getProductField().isEmpty())
+                        ? "saleDetails.product." + dto.getProductField()
+                        : "saleDetails.product._id";
+                criteriaList.add(Criteria.where(productField).is(dto.getProduct()));
+            }
+            if (dto.getSaleType() != null && !dto.getSaleType().isEmpty()) {
+                criteriaList.add(Criteria.where("saleType").is(dto.getSaleType()));
             }
             if (dto.getPaymentMethod() != null && !dto.getPaymentMethod().isEmpty()) {
                 criteriaList.add(new Criteria().orOperator(
@@ -503,17 +530,19 @@ public class SaleServiceImpl implements SaleService {
         // Rango de fechas — default últimos 30 días si no se especifica
         if (dto.getFromDate() != null && !dto.getFromDate().isBlank()
                 && dto.getToDate() != null && !dto.getToDate().isBlank()) {
-            java.time.LocalDate from = java.time.LocalDate.parse(dto.getFromDate());
-            java.time.LocalDate to = java.time.LocalDate.parse(dto.getToDate());
+            java.time.LocalDate parsed1 = java.time.LocalDate.parse(dto.getFromDate());
+            java.time.LocalDate parsed2 = java.time.LocalDate.parse(dto.getToDate());
+            java.time.LocalDate startDate = parsed1.isBefore(parsed2) ? parsed1 : parsed2;
+            java.time.LocalDate endDate = parsed1.isAfter(parsed2) ? parsed1 : parsed2;
             criteriaList.add(Criteria.where("dateTimeRecord")
-                    .gte(to.atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime())
-                    .lte(from.atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime()));
+                    .gte(startDate.atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime())
+                    .lte(endDate.atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime()));
         } else {
-            java.time.LocalDate defaultFrom = java.time.LocalDate.now(DateTimeUtil.getBogotaZone());
-            java.time.LocalDate defaultTo = defaultFrom.minusDays(30);
+            java.time.LocalDate today = java.time.LocalDate.now(DateTimeUtil.getBogotaZone());
+            java.time.LocalDate thirtyDaysAgo = today.minusDays(30);
             criteriaList.add(Criteria.where("dateTimeRecord")
-                    .gte(defaultTo.atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime())
-                    .lte(defaultFrom.atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime()));
+                    .gte(thirtyDaysAgo.atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime())
+                    .lte(today.atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime()));
         }
 
         if (dto.getBillNumber() != null && !dto.getBillNumber().isBlank()) {
@@ -523,10 +552,10 @@ public class SaleServiceImpl implements SaleService {
             criteriaList.add(Criteria.where("order.creationUser.numberIdentity").is(dto.getUserSale()));
         }
         if (dto.getClient() != null && !dto.getClient().isBlank()) {
-            criteriaList.add(Criteria.where("client.id").is(dto.getClient()));
+            criteriaList.add(Criteria.where("client._id").is(dto.getClient()));
         }
         if (dto.getProduct() != null && !dto.getProduct().isBlank()) {
-            criteriaList.add(Criteria.where("saleDetails.product.id").is(dto.getProduct()));
+            criteriaList.add(Criteria.where("saleDetails.product._id").is(dto.getProduct()));
         }
         if (dto.getSaleType() != null && !dto.getSaleType().isBlank()) {
             criteriaList.add(Criteria.where("saleType").is(dto.getSaleType()));
