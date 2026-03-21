@@ -135,7 +135,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
             // Actualizar el existente
             session.setOpeningBalance(request.getOpeningBalance());
             session.setNotes(request.getNotes());
-            session.getAuditTrail().add(AuditEntry.builder()
+            ensureAuditTrail(session).add(AuditEntry.builder()
                     .userId(userId)
                     .userName(userName)
                     .action(EAuditAction.ACTUALIZACION)
@@ -228,7 +228,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         }
 
         session.setStatus(ECashCountStatus.CERRADO);
-        session.getAuditTrail().add(AuditEntry.builder()
+        ensureAuditTrail(session).add(AuditEntry.builder()
                 .userId(userId)
                 .userName(userName)
                 .action(EAuditAction.CIERRE)
@@ -264,7 +264,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
 
         session.setStatus(ECashCountStatus.ANULADO);
         session.setCancelReason(request.getReason());
-        session.getAuditTrail().add(AuditEntry.builder()
+        ensureAuditTrail(session).add(AuditEntry.builder()
                 .userId(userId)
                 .userName(userName)
                 .action(EAuditAction.ANULACION)
@@ -661,6 +661,13 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .cancelReason(session.getCancelReason())
                 .auditTrail(auditDtos)
                 .build();
+    }
+
+    private List<AuditEntry> ensureAuditTrail(CashCountSession session) {
+        if (session.getAuditTrail() == null) {
+            session.setAuditTrail(new ArrayList<>());
+        }
+        return session.getAuditTrail();
     }
 
     private CashCountSummaryDto mapToSummaryDto(CashCountSession session) {
