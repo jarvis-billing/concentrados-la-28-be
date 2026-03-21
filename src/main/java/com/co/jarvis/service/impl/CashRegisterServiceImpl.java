@@ -135,22 +135,27 @@ public class CashRegisterServiceImpl implements CashRegisterService {
             // Actualizar el existente
             session.setOpeningBalance(request.getOpeningBalance());
             session.setNotes(request.getNotes());
-            session.setUpdatedBy(userId);
-            session.setUpdatedByName(userName);
-            session.setUpdatedAt(LocalDateTime.now());
+            session.getAuditTrail().add(AuditEntry.builder()
+                    .userId(userId)
+                    .userName(userName)
+                    .action(EAuditAction.ACTUALIZACION)
+                    .timestamp(LocalDateTime.now())
+                    .build());
         } else {
             // Crear nuevo
-            LocalDateTime now = LocalDateTime.now();
+            List<AuditEntry> auditTrail = new ArrayList<>();
+            auditTrail.add(AuditEntry.builder()
+                    .userId(userId)
+                    .userName(userName)
+                    .action(EAuditAction.APERTURA)
+                    .timestamp(LocalDateTime.now())
+                    .build());
             session = CashCountSession.builder()
                     .sessionDate(request.getSessionDate())
                     .openingBalance(request.getOpeningBalance())
                     .notes(request.getNotes())
                     .status(ECashCountStatus.EN_PROGRESO)
-                    .openedBy(userId)
-                    .openedByName(userName)
-                    .openedAt(now)
-                    .createdBy(userId)
-                    .createdAt(now)
+                    .auditTrail(auditTrail)
                     .build();
         }
 
@@ -223,9 +228,12 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         }
 
         session.setStatus(ECashCountStatus.CERRADO);
-        session.setClosedBy(userId);
-        session.setClosedByName(userName);
-        session.setClosedAt(LocalDateTime.now());
+        session.getAuditTrail().add(AuditEntry.builder()
+                .userId(userId)
+                .userName(userName)
+                .action(EAuditAction.CIERRE)
+                .timestamp(LocalDateTime.now())
+                .build());
         
         if (request.getNotes() != null && !request.getNotes().isEmpty()) {
             String existingNotes = session.getNotes() != null ? session.getNotes() + " | " : "";
@@ -256,9 +264,13 @@ public class CashRegisterServiceImpl implements CashRegisterService {
 
         session.setStatus(ECashCountStatus.ANULADO);
         session.setCancelReason(request.getReason());
-        session.setCancelledBy(userId);
-        session.setCancelledByName(userName);
-        session.setCancelledAt(LocalDateTime.now());
+        session.getAuditTrail().add(AuditEntry.builder()
+                .userId(userId)
+                .userName(userName)
+                .action(EAuditAction.ANULACION)
+                .timestamp(LocalDateTime.now())
+                .details(request.getReason())
+                .build());
 
         session = cashCountSessionRepository.save(session);
         log.info("Cash count session cancelled: {}", id);
@@ -619,6 +631,17 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                                 .build())
                         .collect(Collectors.toList()) : new ArrayList<>();
 
+        List<AuditEntryDto> auditDtos = session.getAuditTrail() != null ?
+                session.getAuditTrail().stream()
+                        .map(a -> AuditEntryDto.builder()
+                                .userId(a.getUserId())
+                                .userName(a.getUserName())
+                                .action(a.getAction())
+                                .timestamp(a.getTimestamp())
+                                .details(a.getDetails())
+                                .build())
+                        .collect(Collectors.toList()) : new ArrayList<>();
+
         return CashCountSessionDto.builder()
                 .id(session.getId())
                 .sessionDate(session.getSessionDate())
@@ -636,24 +659,22 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .status(session.getStatus())
                 .notes(session.getNotes())
                 .cancelReason(session.getCancelReason())
-                .openedBy(session.getOpenedBy())
-                .openedByName(session.getOpenedByName())
-                .openedAt(session.getOpenedAt())
-                .updatedBy(session.getUpdatedBy())
-                .updatedByName(session.getUpdatedByName())
-                .updatedAt(session.getUpdatedAt())
-                .closedBy(session.getClosedBy())
-                .closedByName(session.getClosedByName())
-                .closedAt(session.getClosedAt())
-                .cancelledBy(session.getCancelledBy())
-                .cancelledByName(session.getCancelledByName())
-                .cancelledAt(session.getCancelledAt())
-                .createdBy(session.getCreatedBy())
-                .createdAt(session.getCreatedAt())
+                .auditTrail(auditDtos)
                 .build();
     }
 
     private CashCountSummaryDto mapToSummaryDto(CashCountSession session) {
+        List<AuditEntryDto> auditDtos = session.getAuditTrail() != null ?
+                session.getAuditTrail().stream()
+                        .map(a -> AuditEntryDto.builder()
+                                .userId(a.getUserId())
+                                .userName(a.getUserName())
+                                .action(a.getAction())
+                                .timestamp(a.getTimestamp())
+                                .details(a.getDetails())
+                                .build())
+                        .collect(Collectors.toList()) : new ArrayList<>();
+
         return CashCountSummaryDto.builder()
                 .date(session.getSessionDate())
                 .openingBalance(session.getOpeningBalance())
@@ -663,9 +684,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .countedCash(session.getTotalCashCounted())
                 .difference(session.getCashDifference())
                 .status(session.getStatus())
-                .openedByName(session.getOpenedByName())
-                .closedBy(session.getClosedBy())
-                .closedByName(session.getClosedByName())
+                .auditTrail(auditDtos)
                 .build();
     }
 }

@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * DTO para listado de arqueos (reportes)
@@ -26,7 +27,5 @@ public class CashCountSummaryDto implements Serializable {
     private BigDecimal countedCash;
     private BigDecimal difference;
     private ECashCountStatus status;
-    private String openedByName;
-    private String closedBy;
-    private String closedByName;
+    private List<AuditEntryDto> auditTrail;
 }
