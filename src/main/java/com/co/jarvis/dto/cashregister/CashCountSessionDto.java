@@ -33,8 +33,5 @@ public class CashCountSessionDto implements Serializable {
     private ECashCountStatus status;
     private String notes;
     private String cancelReason;
-    private String createdBy;
-    private LocalDateTime createdAt;
-    private String closedBy;
-    private LocalDateTime closedAt;
+    private List<AuditEntryDto> auditTrail;
 }

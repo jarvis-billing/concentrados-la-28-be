@@ -26,5 +26,7 @@ public class CashCountSummaryDto implements Serializable {
     private BigDecimal countedCash;
     private BigDecimal difference;
     private ECashCountStatus status;
+    private String openedByName;
     private String closedBy;
+    private String closedByName;
 }

@@ -11,8 +11,10 @@ import org.springframework.data.mongodb.core.convert.MongoCustomConversions;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.lang.NonNull;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -66,6 +68,8 @@ public class MongoConfig {
         List<Converter<?, ?>> converters = new ArrayList<>();
         converters.add(new DateToOffsetDateTimeConverter());
         converters.add(new OffsetDateTimeToDateConverter());
+        converters.add(new LocalDateToDateConverter());
+        converters.add(new DateToLocalDateConverter());
         return new MongoCustomConversions(converters);
     }
 
@@ -93,6 +97,29 @@ public class MongoConfig {
             // Convertir a Instant (UTC) para almacenar en MongoDB
             // El offset se preserva al leer gracias a DateToOffsetDateTimeConverter
             return Date.from(source.toInstant());
+        }
+    }
+
+    /**
+     * Convierte LocalDate (Java) a Date (MongoDB)
+     * Siempre usa medianoche UTC para que la fecha sea consistente
+     * independiente de la zona horaria de la JVM
+     */
+    static class LocalDateToDateConverter implements Converter<LocalDate, Date> {
+        @Override
+        public Date convert(@NonNull LocalDate source) {
+            return Date.from(source.atStartOfDay(ZoneOffset.UTC).toInstant());
+        }
+    }
+
+    /**
+     * Convierte Date (MongoDB) a LocalDate (Java)
+     * Siempre interpreta como UTC para mantener consistencia
+     */
+    static class DateToLocalDateConverter implements Converter<Date, LocalDate> {
+        @Override
+        public LocalDate convert(@NonNull Date source) {
+            return source.toInstant().atZone(ZoneOffset.UTC).toLocalDate();
         }
     }
 }

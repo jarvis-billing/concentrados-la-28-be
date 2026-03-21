@@ -1,5 +1,6 @@
 package com.co.jarvis.service.impl;
 
+import com.co.jarvis.dto.UserDto;
 import com.co.jarvis.dto.cashregister.*;
 import com.co.jarvis.entity.*;
 import com.co.jarvis.enums.*;
@@ -76,10 +77,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         // 6. Obtener préstamos de caja del día
         transactions.addAll(getCashLoanTransactions(date));
 
-        // Calcular resúmenes por método de pago
-        List<PaymentMethodSummaryDto> paymentMethodSummaries = calculatePaymentMethodSummaries(transactions);
-
-        // Calcular totales
+        // Calcular totales — todas las transacciones son solo EFECTIVO
         BigDecimal totalIncome = transactions.stream()
                 .filter(t -> t.getType() == ETransactionType.INGRESO)
                 .map(CashTransactionDto::getAmount)
@@ -90,22 +88,10 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .map(CashTransactionDto::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Calcular montos esperados por método de pago
-        BigDecimal expectedCash = paymentMethodSummaries.stream()
-                .filter(s -> s.getPaymentMethod() == EPaymentMethod.EFECTIVO)
-                .map(PaymentMethodSummaryDto::getNetAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal expectedCash = totalIncome.subtract(totalExpense);
 
-        BigDecimal expectedTransfer = paymentMethodSummaries.stream()
-                .filter(s -> s.getPaymentMethod() == EPaymentMethod.TRANSFERENCIA)
-                .map(PaymentMethodSummaryDto::getNetAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        BigDecimal expectedOther = paymentMethodSummaries.stream()
-                .filter(s -> s.getPaymentMethod() != EPaymentMethod.EFECTIVO && 
-                            s.getPaymentMethod() != EPaymentMethod.TRANSFERENCIA)
-                .map(PaymentMethodSummaryDto::getNetAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Resumen por método de pago (solo EFECTIVO)
+        List<PaymentMethodSummaryDto> paymentMethodSummaries = calculatePaymentMethodSummaries(transactions);
 
         return DailySummaryResponse.builder()
                 .transactions(transactions)
@@ -113,15 +99,19 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .totalIncome(totalIncome)
                 .totalExpense(totalExpense)
                 .expectedCashAmount(expectedCash)
-                .expectedTransferAmount(expectedTransfer)
-                .expectedOtherAmount(expectedOther)
+                .expectedTransferAmount(BigDecimal.ZERO)
+                .expectedOtherAmount(BigDecimal.ZERO)
                 .build();
     }
 
     @Override
     @Transactional
-    public CashCountSessionDto createOrUpdate(CreateCashCountRequest request, String createdBy) {
-        log.info("CashRegisterServiceImpl -> createOrUpdate: date={}", request.getSessionDate());
+    public CashCountSessionDto createOrUpdate(CreateCashCountRequest request, UserDto user) {
+        log.info("CashRegisterServiceImpl -> createOrUpdate: date={}, user={}", request.getSessionDate(),
+                user != null ? user.getNumberIdentity() : "unknown");
+
+        String userId = user != null ? user.getNumberIdentity() : "unknown";
+        String userName = user != null ? user.getFullName() : "unknown";
 
         // Buscar si ya existe un arqueo para esa fecha
         Optional<CashCountSession> existingSession = cashCountSessionRepository
@@ -145,16 +135,22 @@ public class CashRegisterServiceImpl implements CashRegisterService {
             // Actualizar el existente
             session.setOpeningBalance(request.getOpeningBalance());
             session.setNotes(request.getNotes());
+            session.setUpdatedBy(userId);
+            session.setUpdatedByName(userName);
             session.setUpdatedAt(LocalDateTime.now());
         } else {
             // Crear nuevo
+            LocalDateTime now = LocalDateTime.now();
             session = CashCountSession.builder()
                     .sessionDate(request.getSessionDate())
                     .openingBalance(request.getOpeningBalance())
                     .notes(request.getNotes())
                     .status(ECashCountStatus.EN_PROGRESO)
-                    .createdBy(createdBy)
-                    .createdAt(LocalDateTime.now())
+                    .openedBy(userId)
+                    .openedByName(userName)
+                    .openedAt(now)
+                    .createdBy(userId)
+                    .createdAt(now)
                     .build();
         }
 
@@ -212,8 +208,12 @@ public class CashRegisterServiceImpl implements CashRegisterService {
 
     @Override
     @Transactional
-    public CashCountSessionDto close(String id, CloseCashCountRequest request, String closedBy) {
-        log.info("CashRegisterServiceImpl -> close: {}", id);
+    public CashCountSessionDto close(String id, CloseCashCountRequest request, UserDto user) {
+        log.info("CashRegisterServiceImpl -> close: {}, user={}", id,
+                user != null ? user.getNumberIdentity() : "unknown");
+
+        String userId = user != null ? user.getNumberIdentity() : "unknown";
+        String userName = user != null ? user.getFullName() : "unknown";
 
         CashCountSession session = cashCountSessionRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Arqueo no encontrado"));
@@ -223,7 +223,8 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         }
 
         session.setStatus(ECashCountStatus.CERRADO);
-        session.setClosedBy(closedBy);
+        session.setClosedBy(userId);
+        session.setClosedByName(userName);
         session.setClosedAt(LocalDateTime.now());
         
         if (request.getNotes() != null && !request.getNotes().isEmpty()) {
@@ -239,8 +240,12 @@ public class CashRegisterServiceImpl implements CashRegisterService {
 
     @Override
     @Transactional
-    public CashCountSessionDto cancel(String id, CancelCashCountRequest request, String cancelledBy) {
-        log.info("CashRegisterServiceImpl -> cancel: {}", id);
+    public CashCountSessionDto cancel(String id, CancelCashCountRequest request, UserDto user) {
+        log.info("CashRegisterServiceImpl -> cancel: {}, user={}", id,
+                user != null ? user.getNumberIdentity() : "unknown");
+
+        String userId = user != null ? user.getNumberIdentity() : "unknown";
+        String userName = user != null ? user.getFullName() : "unknown";
 
         CashCountSession session = cashCountSessionRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Arqueo no encontrado"));
@@ -251,8 +256,9 @@ public class CashRegisterServiceImpl implements CashRegisterService {
 
         session.setStatus(ECashCountStatus.ANULADO);
         session.setCancelReason(request.getReason());
-        session.setClosedBy(cancelledBy);
-        session.setClosedAt(LocalDateTime.now());
+        session.setCancelledBy(userId);
+        session.setCancelledByName(userName);
+        session.setCancelledAt(LocalDateTime.now());
 
         session = cashCountSessionRepository.save(session);
         log.info("Cash count session cancelled: {}", id);
@@ -316,39 +322,42 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         List<CashTransactionDto> transactions = new ArrayList<>();
         
         for (Billing billing : billings) {
-            // Si tiene detalle de payments, usar esos para desglosar por método de pago
+            // Solo incluir pagos en EFECTIVO para el arqueo de caja
             if (billing.getPayments() != null && !billing.getPayments().isEmpty()) {
                 for (PaymentEntry payment : billing.getPayments()) {
                     EPaymentMethod method = parsePaymentMethod(payment.getMethod());
+                    if (method != EPaymentMethod.EFECTIVO) continue;
                     transactions.add(CashTransactionDto.builder()
                             .id(billing.getId() + "-" + payment.getMethod())
                             .type(ETransactionType.INGRESO)
                             .category(ETransactionCategory.VENTA)
                             .description("Venta #" + billing.getBillNumber())
                             .amount(payment.getAmount())
-                            .paymentMethod(method)
+                            .paymentMethod(EPaymentMethod.EFECTIVO)
                             .reference(payment.getReference())
                             .transactionDate(billing.getDateTimeRecord().toLocalDateTime())
                             .relatedDocumentId(billing.getId())
                             .build());
                 }
             } else {
-                // Fallback: usar paymentMethods array (monto total)
+                // Fallback: usar paymentMethods array — solo si es EFECTIVO
                 EPaymentMethod paymentMethod = billing.getPaymentMethods() != null && 
                         !billing.getPaymentMethods().isEmpty() 
                         ? billing.getPaymentMethods().get(0) 
                         : EPaymentMethod.EFECTIVO;
 
-                transactions.add(CashTransactionDto.builder()
-                        .id(billing.getId())
-                        .type(ETransactionType.INGRESO)
-                        .category(ETransactionCategory.VENTA)
-                        .description("Venta #" + billing.getBillNumber())
-                        .amount(billing.getTotalBilling())
-                        .paymentMethod(paymentMethod)
-                        .transactionDate(billing.getDateTimeRecord().toLocalDateTime())
-                        .relatedDocumentId(billing.getId())
-                        .build());
+                if (paymentMethod == EPaymentMethod.EFECTIVO) {
+                    transactions.add(CashTransactionDto.builder()
+                            .id(billing.getId())
+                            .type(ETransactionType.INGRESO)
+                            .category(ETransactionCategory.VENTA)
+                            .description("Venta #" + billing.getBillNumber())
+                            .amount(billing.getTotalBilling())
+                            .paymentMethod(EPaymentMethod.EFECTIVO)
+                            .transactionDate(billing.getDateTimeRecord().toLocalDateTime())
+                            .relatedDocumentId(billing.getId())
+                            .build());
+                }
             }
 
             // Registrar el cambio/vuelto entregado como egreso en efectivo
@@ -387,6 +396,11 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         for (ClientAccount account : allAccounts) {
             if (account.getPayments() != null) {
                 for (AccountPayment payment : account.getPayments()) {
+                    // Solo pagos en EFECTIVO para el arqueo
+                    EPaymentMethod method = payment.getPaymentMethod() != null ? 
+                            payment.getPaymentMethod() : EPaymentMethod.EFECTIVO;
+                    if (method != EPaymentMethod.EFECTIVO) continue;
+
                     if (payment.getPaymentDate() != null &&
                         payment.getPaymentDate().toLocalDate().equals(date)) {
                         
@@ -399,8 +413,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                                 .category(ETransactionCategory.PAGO_CREDITO)
                                 .description("Abono crédito - " + clientName)
                                 .amount(payment.getAmount())
-                                .paymentMethod(payment.getPaymentMethod() != null ? 
-                                        payment.getPaymentMethod() : EPaymentMethod.EFECTIVO)
+                                .paymentMethod(EPaymentMethod.EFECTIVO)
                                 .reference(payment.getReference())
                                 .transactionDate(payment.getPaymentDate())
                                 .relatedDocumentId(account.getId())
@@ -421,6 +434,11 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         for (ClientCredit credit : allCredits) {
             if (credit.getTransactions() != null) {
                 for (CreditTransaction ct : credit.getTransactions()) {
+                    // Solo depósitos en EFECTIVO para el arqueo
+                    EPaymentMethod method = ct.getPaymentMethod() != null ? 
+                            ct.getPaymentMethod() : EPaymentMethod.EFECTIVO;
+                    if (method != EPaymentMethod.EFECTIVO) continue;
+
                     if (ct.getType() == ECreditTransactionType.DEPOSIT &&
                         ct.getTransactionDate() != null &&
                         ct.getTransactionDate().toLocalDate().equals(date)) {
@@ -434,8 +452,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                                 .category(ETransactionCategory.DEPOSITO_ANTICIPO)
                                 .description("Depósito saldo a favor - " + clientName)
                                 .amount(ct.getAmount())
-                                .paymentMethod(ct.getPaymentMethod() != null ? 
-                                        ct.getPaymentMethod() : EPaymentMethod.EFECTIVO)
+                                .paymentMethod(EPaymentMethod.EFECTIVO)
                                 .reference(ct.getReference())
                                 .transactionDate(ct.getTransactionDate())
                                 .relatedDocumentId(credit.getId())
@@ -455,15 +472,20 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         Query query = new Query(Criteria.where("dateTimeRecord").gte(startOfDay).lte(endOfDay));
         List<Expense> expenses = mongoTemplate.find(query, Expense.class);
 
+        // Solo gastos pagados en EFECTIVO para el arqueo
         return expenses.stream()
+                .filter(expense -> {
+                    EPaymentMethod method = expense.getPaymentMethod() != null ? 
+                            expense.getPaymentMethod() : EPaymentMethod.EFECTIVO;
+                    return method == EPaymentMethod.EFECTIVO;
+                })
                 .map(expense -> CashTransactionDto.builder()
                         .id(expense.getId())
                         .type(ETransactionType.EGRESO)
                         .category(ETransactionCategory.GASTO)
                         .description(expense.getDescription())
                         .amount(expense.getAmount())
-                        .paymentMethod(expense.getPaymentMethod() != null ? 
-                                expense.getPaymentMethod() : EPaymentMethod.EFECTIVO)
+                        .paymentMethod(EPaymentMethod.EFECTIVO)
                         .reference(expense.getReference())
                         .transactionDate(expense.getDateTimeRecord().toLocalDateTime())
                         .relatedDocumentId(expense.getId())
@@ -474,15 +496,20 @@ public class CashRegisterServiceImpl implements CashRegisterService {
     private List<CashTransactionDto> getSupplierPaymentTransactions(LocalDate date) {
         List<SupplierPayment> payments = supplierPaymentRepository.findByPaymentDate(date);
 
+        // Solo pagos a proveedores en EFECTIVO para el arqueo
         return payments.stream()
+                .filter(payment -> {
+                    EPaymentMethod method = payment.getMethod() != null ? 
+                            payment.getMethod() : EPaymentMethod.EFECTIVO;
+                    return method == EPaymentMethod.EFECTIVO;
+                })
                 .map(payment -> CashTransactionDto.builder()
                         .id(payment.getId())
                         .type(ETransactionType.EGRESO)
                         .category(ETransactionCategory.PAGO_PROVEEDOR)
                         .description("Pago a " + payment.getSupplierName())
                         .amount(payment.getAmount())
-                        .paymentMethod(payment.getMethod() != null ? 
-                                payment.getMethod() : EPaymentMethod.EFECTIVO)
+                        .paymentMethod(EPaymentMethod.EFECTIVO)
                         .reference(payment.getReference())
                         .transactionDate(date.atStartOfDay())
                         .relatedDocumentId(payment.getId())
@@ -609,10 +636,20 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .status(session.getStatus())
                 .notes(session.getNotes())
                 .cancelReason(session.getCancelReason())
+                .openedBy(session.getOpenedBy())
+                .openedByName(session.getOpenedByName())
+                .openedAt(session.getOpenedAt())
+                .updatedBy(session.getUpdatedBy())
+                .updatedByName(session.getUpdatedByName())
+                .updatedAt(session.getUpdatedAt())
+                .closedBy(session.getClosedBy())
+                .closedByName(session.getClosedByName())
+                .closedAt(session.getClosedAt())
+                .cancelledBy(session.getCancelledBy())
+                .cancelledByName(session.getCancelledByName())
+                .cancelledAt(session.getCancelledAt())
                 .createdBy(session.getCreatedBy())
                 .createdAt(session.getCreatedAt())
-                .closedBy(session.getClosedBy())
-                .closedAt(session.getClosedAt())
                 .build();
     }
 
@@ -626,7 +663,9 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .countedCash(session.getTotalCashCounted())
                 .difference(session.getCashDifference())
                 .status(session.getStatus())
+                .openedByName(session.getOpenedByName())
                 .closedBy(session.getClosedBy())
+                .closedByName(session.getClosedByName())
                 .build();
     }
 }

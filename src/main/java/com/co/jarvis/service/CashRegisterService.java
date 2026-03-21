@@ -1,5 +1,6 @@
 package com.co.jarvis.service;
 
+import com.co.jarvis.dto.UserDto;
 import com.co.jarvis.dto.cashregister.*;
 import com.co.jarvis.enums.ECashCountStatus;
 
@@ -16,7 +17,7 @@ public interface CashRegisterService {
     /**
      * Crea o actualiza un arqueo de caja
      */
-    CashCountSessionDto createOrUpdate(CreateCashCountRequest request, String createdBy);
+    CashCountSessionDto createOrUpdate(CreateCashCountRequest request, UserDto user);
 
     /**
      * Obtiene un arqueo por fecha
@@ -31,12 +32,12 @@ public interface CashRegisterService {
     /**
      * Cierra un arqueo de caja
      */
-    CashCountSessionDto close(String id, CloseCashCountRequest request, String closedBy);
+    CashCountSessionDto close(String id, CloseCashCountRequest request, UserDto user);
 
     /**
      * Anula un arqueo de caja
      */
-    CashCountSessionDto cancel(String id, CancelCashCountRequest request, String cancelledBy);
+    CashCountSessionDto cancel(String id, CancelCashCountRequest request, UserDto user);
 
     /**
      * Lista arqueos con filtros opcionales

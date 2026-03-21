@@ -11,7 +11,6 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,9 +52,6 @@ public class CashCountSession {
     private String notes;                       // Notas del arqueo
     private String cancelReason;                // Razón de anulación (si aplica)
 
-    private String createdBy;
-    private LocalDateTime createdAt;
-    private String closedBy;
-    private LocalDateTime closedAt;
-    private LocalDateTime updatedAt;
+    @Builder.Default
+    private List<AuditEntry> auditTrail = new ArrayList<>();  // Historial de operaciones
 }

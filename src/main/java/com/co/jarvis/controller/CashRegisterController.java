@@ -1,5 +1,6 @@
 package com.co.jarvis.controller;
 
+import com.co.jarvis.dto.UserDto;
 import com.co.jarvis.dto.cashregister.*;
 import com.co.jarvis.enums.ECashCountStatus;
 import com.co.jarvis.service.CashRegisterService;
@@ -8,6 +9,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -39,13 +42,12 @@ public class CashRegisterController {
      * Crea o actualiza un arqueo de caja
      */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> createOrUpdate(
-            @RequestBody CreateCashCountRequest request,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+    public ResponseEntity<?> createOrUpdate(@RequestBody CreateCashCountRequest request) {
         log.info("CashRegisterController -> createOrUpdate: date={}", request.getSessionDate());
         
         try {
-            CashCountSessionDto session = cashRegisterService.createOrUpdate(request, userId);
+            UserDto user = getAuthenticatedUser();
+            CashCountSessionDto session = cashRegisterService.createOrUpdate(request, user);
             return ResponseEntity.ok(session);
         } catch (RuntimeException e) {
             log.error("Error creating/updating cash count: {}", e.getMessage());
@@ -89,12 +91,12 @@ public class CashRegisterController {
     @PostMapping(value = "/{id}/close", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> close(
             @PathVariable String id,
-            @RequestBody CloseCashCountRequest request,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            @RequestBody CloseCashCountRequest request) {
         log.info("CashRegisterController -> close: {}", id);
         
         try {
-            CashCountSessionDto session = cashRegisterService.close(id, request, userId);
+            UserDto user = getAuthenticatedUser();
+            CashCountSessionDto session = cashRegisterService.close(id, request, user);
             return ResponseEntity.ok(session);
         } catch (RuntimeException e) {
             log.error("Error closing cash count: {}", e.getMessage());
@@ -112,12 +114,12 @@ public class CashRegisterController {
     @PostMapping(value = "/{id}/cancel", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> cancel(
             @PathVariable String id,
-            @RequestBody CancelCashCountRequest request,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            @RequestBody CancelCashCountRequest request) {
         log.info("CashRegisterController -> cancel: {}", id);
         
         try {
-            CashCountSessionDto session = cashRegisterService.cancel(id, request, userId);
+            UserDto user = getAuthenticatedUser();
+            CashCountSessionDto session = cashRegisterService.cancel(id, request, user);
             return ResponseEntity.ok(session);
         } catch (RuntimeException e) {
             log.error("Error cancelling cash count: {}", e.getMessage());
@@ -151,5 +153,13 @@ public class CashRegisterController {
         log.info("CashRegisterController -> getSuggestedOpening");
         SuggestedOpeningResponse response = cashRegisterService.getSuggestedOpening();
         return ResponseEntity.ok(response);
+    }
+
+    private UserDto getAuthenticatedUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof UserDto user) {
+            return user;
+        }
+        return null;
     }
 }
