@@ -308,6 +308,13 @@ public class InventoryServiceImpl implements InventoryService {
         log.info("Inventario físico con presentaciones para producto: {} ({}), SaleType: {}", 
             product.getDescription(), product.getProductCode(), product.getSaleType());
         
+        // DIAGNÓSTICO: Log fixedAmount de cada presentación ANTES del cálculo
+        if (product.getPresentations() != null) {
+            product.getPresentations().forEach(p -> 
+                log.info("DIAG ANTES - Presentación {}: barcode={}, fixedAmount={}, isFixedAmount={}, isBulk={}", 
+                    p.getLabel(), p.getBarcode(), p.getFixedAmount(), p.getIsFixedAmount(), p.getIsBulk()));
+        }
+        
         // 2. Calcular stock total desde los conteos por presentación
         Double totalPhysicalStock = calculateTotalStockFromPresentations(product, request.getPresentationCounts());
         
@@ -326,6 +333,20 @@ public class InventoryServiceImpl implements InventoryService {
         // 5. Actualizar stock del producto
         product.getStock().setQuantity(BigDecimal.valueOf(totalPhysicalStock));
         productRepository.save(product);
+        
+        // DIAGNÓSTICO: Log fixedAmount DESPUÉS del save para detectar corrupción
+        if (product.getPresentations() != null) {
+            product.getPresentations().forEach(p -> 
+                log.info("DIAG DESPUÉS - Presentación {}: barcode={}, fixedAmount={}, isFixedAmount={}, isBulk={}", 
+                    p.getLabel(), p.getBarcode(), p.getFixedAmount(), p.getIsFixedAmount(), p.getIsBulk()));
+        }
+        
+        // DIAGNÓSTICO: Log lo que envió el frontend
+        if (request.getPresentationCounts() != null) {
+            request.getPresentationCounts().forEach(c -> 
+                log.info("DIAG REQUEST - barcode={}, quantity={}, fixedAmount={}, isBulk={}, calculatedStock={}", 
+                    c.getPresentationBarcode(), c.getQuantity(), c.getFixedAmount(), c.getIsBulk(), c.getCalculatedStock()));
+        }
         
         // 6. Construir notas detalladas con el desglose por presentación
         String detailedNotes = buildPresentationCountNotes(request, product);
