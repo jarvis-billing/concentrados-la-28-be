@@ -275,8 +275,6 @@ public class ProductServiceImpl implements ProductService {
         product.setVatValue(dto.getVatValue());
         product.setVatType(dto.getVatType());
 
-        // Actualizar presentaciones: solo campos editables (precio, label, unitMeasure)
-        // NUNCA modificar fixedAmount, isFixedAmount, isBulk desde el frontend
         if (dto.getPresentations() != null && product.getPresentations() != null) {
             for (Presentation dtoPres : dto.getPresentations()) {
                 if (dtoPres.getBarcode() == null) continue;
@@ -289,7 +287,10 @@ public class ProductServiceImpl implements ProductService {
                             dbPres.setLabel(dtoPres.getLabel());
                             dbPres.setUnitMeasure(dtoPres.getUnitMeasure());
                             dbPres.setProductCode(dtoPres.getProductCode());
-                            // fixedAmount, isFixedAmount, isBulk NO se tocan
+                            dbPres.setFixedAmount(dtoPres.getFixedAmount());
+                            dbPres.setIsFixedAmount(dtoPres.getIsFixedAmount());
+                            dbPres.setIsBulk(dtoPres.getIsBulk());
+                            
                             log.info("Presentación {} actualizada: salePrice={}, costPrice={}, label={} | fixedAmount={} (protegido)",
                                     dbPres.getBarcode(), dbPres.getSalePrice(), dbPres.getCostPrice(),
                                     dbPres.getLabel(), dbPres.getFixedAmount());
