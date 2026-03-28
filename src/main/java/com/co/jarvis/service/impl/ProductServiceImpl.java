@@ -207,16 +207,13 @@ public class ProductServiceImpl implements ProductService {
     public ProductDto save(ProductDto dto) {
         log.info("ProductServiceImpl -> save");
         try {
-            //existBarcode(dto.getBarcode());
-            Product product = mapper.mapToEntity(dto);
-
-            // Si el producto ya existe (tiene id), preservar campos estructurales de presentaciones
-            if (product.getId() != null) {
-                final Product toSave = product;
-                repository.findById(product.getId()).ifPresent(existing ->
-                        preservePresentationStructuralFields(existing, toSave));
+            // Si el producto ya existe (tiene id), redirigir a updatePresent para proteger campos estructurales
+            if (dto.getId() != null && repository.existsById(dto.getId())) {
+                log.info("Producto con id {} ya existe, redirigiendo a updatePresent", dto.getId());
+                return updatePresent(dto, dto.getId());
             }
 
+            Product product = mapper.mapToEntity(dto);
             product = repository.save(product);
             return enrichProductDto(product);
         } catch (DuplicateRecordException e) {
@@ -265,44 +262,61 @@ public class ProductServiceImpl implements ProductService {
     private ProductDto updatePresent(ProductDto dto, String id) {
         log.info("ProductServiceImpl -> updatePresent");
 
-        // Obtener producto existente para preservar campos estructurales de presentaciones
-        Product existing = repository.findById(id)
+        // Cargar producto existente de la DB (fuente de verdad)
+        Product product = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(MessageConstants.RESOURCE_NOT_FOUND));
 
-        Product product = mapper.mapToEntity(dto);
-        product.setId(id);
+        // Actualizar solo campos generales que el frontend puede modificar
+        product.setDescription(dto.getDescription());
+        product.setSaleType(dto.getSaleType());
+        product.setBrand(dto.getBrand());
+        product.setCategory(dto.getCategory());
+        product.setProductCode(dto.getProductCode());
+        product.setVatValue(dto.getVatValue());
+        product.setVatType(dto.getVatType());
 
-        // Preservar fixedAmount, isFixedAmount e isBulk de las presentaciones existentes
-        // Estos campos son la base del cálculo de stock y no deben ser modificados desde el frontend
-        preservePresentationStructuralFields(existing, product);
+        // Actualizar presentaciones: solo campos editables (precio, label, unitMeasure)
+        // NUNCA modificar fixedAmount, isFixedAmount, isBulk desde el frontend
+        if (dto.getPresentations() != null && product.getPresentations() != null) {
+            for (Presentation dtoPres : dto.getPresentations()) {
+                if (dtoPres.getBarcode() == null) continue;
+                product.getPresentations().stream()
+                        .filter(dbPres -> dtoPres.getBarcode().equals(dbPres.getBarcode()))
+                        .findFirst()
+                        .ifPresent(dbPres -> {
+                            dbPres.setSalePrice(dtoPres.getSalePrice());
+                            dbPres.setCostPrice(dtoPres.getCostPrice());
+                            dbPres.setLabel(dtoPres.getLabel());
+                            dbPres.setUnitMeasure(dtoPres.getUnitMeasure());
+                            dbPres.setProductCode(dtoPres.getProductCode());
+                            // fixedAmount, isFixedAmount, isBulk NO se tocan
+                            log.info("Presentación {} actualizada: salePrice={}, costPrice={}, label={} | fixedAmount={} (protegido)",
+                                    dbPres.getBarcode(), dbPres.getSalePrice(), dbPres.getCostPrice(),
+                                    dbPres.getLabel(), dbPres.getFixedAmount());
+                        });
+            }
+
+            // Agregar presentaciones nuevas (las que no existen en la DB)
+            for (Presentation dtoPres : dto.getPresentations()) {
+                if (dtoPres.getBarcode() == null) continue;
+                boolean existsInDb = product.getPresentations().stream()
+                        .anyMatch(dbPres -> dtoPres.getBarcode().equals(dbPres.getBarcode()));
+                if (!existsInDb) {
+                    product.getPresentations().add(dtoPres);
+                    log.info("Nueva presentación agregada: barcode={}, fixedAmount={}, isFixedAmount={}, isBulk={}",
+                            dtoPres.getBarcode(), dtoPres.getFixedAmount(), dtoPres.getIsFixedAmount(), dtoPres.getIsBulk());
+                }
+            }
+        }
 
         product = repository.save(product);
+        log.info("Producto {} actualizado. Presentaciones guardadas:", product.getProductCode());
+        if (product.getPresentations() != null) {
+            product.getPresentations().forEach(p ->
+                    log.info("  -> barcode={}, fixedAmount={}, isFixedAmount={}, isBulk={}",
+                            p.getBarcode(), p.getFixedAmount(), p.getIsFixedAmount(), p.getIsBulk()));
+        }
         return enrichProductDto(product);
-    }
-
-    /**
-     * Preserva los campos estructurales de las presentaciones existentes (fixedAmount, isFixedAmount, isBulk).
-     * Estos campos definen la configuración de peso/volumen de cada presentación y no deben ser
-     * modificados accidentalmente durante una actualización general del producto.
-     */
-    private void preservePresentationStructuralFields(Product existing, Product updated) {
-        if (existing.getPresentations() == null || updated.getPresentations() == null) {
-            return;
-        }
-        for (Presentation updatedPres : updated.getPresentations()) {
-            if (updatedPres.getBarcode() == null) continue;
-            existing.getPresentations().stream()
-                    .filter(ep -> updatedPres.getBarcode().equals(ep.getBarcode()))
-                    .findFirst()
-                    .ifPresent(existingPres -> {
-                        updatedPres.setFixedAmount(existingPres.getFixedAmount());
-                        updatedPres.setIsFixedAmount(existingPres.getIsFixedAmount());
-                        updatedPres.setIsBulk(existingPres.getIsBulk());
-                        log.info("Preservando campos estructurales de presentación {}: fixedAmount={}, isFixedAmount={}, isBulk={}",
-                                existingPres.getBarcode(), existingPres.getFixedAmount(),
-                                existingPres.getIsFixedAmount(), existingPres.getIsBulk());
-                    });
-        }
     }
 
     /**
