@@ -19,6 +19,8 @@ public class PhysicalInventoryRequestDto {
     
     private LocalDateTime date;
     
+    private LocalDateTime countDateTime;
+    
     private List<PresentationCountDto> presentationCounts;
     
     private Double physicalStock;

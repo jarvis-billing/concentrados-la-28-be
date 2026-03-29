@@ -51,6 +51,18 @@ public class PhysicalInventory {
     @Field("notes")
     private String notes;
 
+    @Field("count_date_time")
+    private LocalDateTime countDateTime;
+
+    @Field("sold_after_count")
+    private Double soldAfterCount;
+
+    @Field("purchased_after_count")
+    private Double purchasedAfterCount;
+
+    @Field("adjusted_stock")
+    private Double adjustedStock;
+
     @Field("user_id")
     private String userId;
 

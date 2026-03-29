@@ -35,4 +35,10 @@ public interface InventoryMovementRepository extends MongoRepository<InventoryMo
     );
 
     List<InventoryMovement> findAllByOrderByDateDesc();
+
+    @Query("{ 'product_id': ?0, 'movement_type': { $in: ?1 }, 'date': { $gte: ?2, $lte: ?3 } }")
+    List<InventoryMovement> findByProductIdAndMovementTypeInAndDateBetween(
+            String productId, List<EMovementType> movementTypes,
+            LocalDateTime startDate, LocalDateTime endDate
+    );
 }
