@@ -19,7 +19,7 @@ public class PhysicalInventoryRequestDto {
     
     private LocalDateTime date;
     
-    private LocalDateTime countDateTime;
+    private LocalDateTime adjustmentFromDate;
     
     private List<PresentationCountDto> presentationCounts;
     

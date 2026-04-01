@@ -190,49 +190,49 @@ public class InventoryServiceImpl implements InventoryService {
         log.info("Producto {} - Stock sistema: {}, Stock físico contado: {}, Presentación: {}",
             product.getProductCode(), systemStock, physicalStock, inventory.getPresentationBarcode());
         
-        // 5. Ajuste automático por ventas/compras posteriores al conteo
-        LocalDateTime countMoment = inventory.getCountDateTime() != null 
-                ? inventory.getCountDateTime() 
-                : DateTimeUtil.nowLocalDateTime();
+        // 5. Ajuste automático por ventas/compras desde la fecha indicada
+        LocalDateTime adjustmentFrom = inventory.getAdjustmentFromDate() != null 
+                ? inventory.getAdjustmentFromDate() 
+                : null;
         LocalDateTime now = DateTimeUtil.nowLocalDateTime();
         
-        Double soldAfterCount = 0.0;
-        Double purchasedAfterCount = 0.0;
+        Double totalSold = 0.0;
+        Double totalPurchased = 0.0;
         
-        if (countMoment.isBefore(now)) {
-            List<InventoryMovement> postCountMovements = movementRepository
+        if (adjustmentFrom != null && adjustmentFrom.isBefore(now)) {
+            List<InventoryMovement> movements = movementRepository
                     .findByProductIdAndMovementTypeInAndDateBetween(
                             inventory.getProductId(),
                             List.of(EMovementType.VENTA, EMovementType.COMPRA),
-                            countMoment,
+                            adjustmentFrom,
                             now
                     );
             
-            for (InventoryMovement mov : postCountMovements) {
+            for (InventoryMovement mov : movements) {
                 if (mov.getMovementType() == EMovementType.VENTA) {
-                    soldAfterCount += Math.abs(mov.getQuantity());
+                    totalSold += Math.abs(mov.getQuantity());
                 } else if (mov.getMovementType() == EMovementType.COMPRA) {
-                    purchasedAfterCount += Math.abs(mov.getQuantity());
+                    totalPurchased += Math.abs(mov.getQuantity());
                 }
             }
             
-            log.info("Producto {} - Ajuste post-conteo: vendido={}, comprado={} (entre {} y {})",
-                    product.getProductCode(), soldAfterCount, purchasedAfterCount,
-                    countMoment.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+            log.info("Producto {} - Ajuste: vendido={}, comprado={} (desde {} hasta {})",
+                    product.getProductCode(), totalSold, totalPurchased,
+                    adjustmentFrom.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
                     now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
         }
         
-        // 6. Calcular stock ajustado
-        Double adjustedStock = physicalStock - soldAfterCount + purchasedAfterCount;
+        // 6. Calcular stock ajustado: conteo - ventas + compras
+        Double adjustedStock = physicalStock - totalSold + totalPurchased;
         Double difference = adjustedStock - systemStock;
         inventory.setDifference(difference);
-        inventory.setCountDateTime(countMoment);
-        inventory.setSoldAfterCount(soldAfterCount);
-        inventory.setPurchasedAfterCount(purchasedAfterCount);
+        inventory.setAdjustmentFromDate(adjustmentFrom);
+        inventory.setSoldAfterCount(totalSold);
+        inventory.setPurchasedAfterCount(totalPurchased);
         inventory.setAdjustedStock(adjustedStock);
         
-        log.info("Producto {} - Stock físico: {}, Vendido post-conteo: {}, Comprado post-conteo: {}, Stock ajustado: {}, Diferencia: {}",
-            product.getProductCode(), physicalStock, soldAfterCount, purchasedAfterCount, adjustedStock, difference);
+        log.info("Producto {} - Stock físico: {}, Vendido: {}, Comprado: {}, Stock ajustado: {}, Diferencia: {}",
+            product.getProductCode(), physicalStock, totalSold, totalPurchased, adjustedStock, difference);
         
         // 7. Actualizar stock del producto con el valor ajustado
         product.getStock().setQuantity(BigDecimal.valueOf(adjustedStock));
@@ -247,11 +247,11 @@ public class InventoryServiceImpl implements InventoryService {
         
         // 9. Construir notas
         String notes = buildPhysicalInventoryNotes(inventory, product, difference);
-        if (soldAfterCount > 0 || purchasedAfterCount > 0) {
+        if (totalSold > 0 || totalPurchased > 0) {
             notes += String.format(
-                    "\n--- AJUSTE POST-CONTEO ---\nConteo realizado: %s\nVendido después del conteo: %.2f\nComprado después del conteo: %.2f\nStock ajustado: %.2f",
-                    countMoment.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
-                    soldAfterCount, purchasedAfterCount, adjustedStock);
+                    "\n--- AJUSTE POR VENTAS/COMPRAS ---\nDesde: %s\nVendido: %.2f\nComprado: %.2f\nStock ajustado: %.2f",
+                    adjustmentFrom != null ? adjustmentFrom.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : "N/A",
+                    totalSold, totalPurchased, adjustedStock);
         }
         
         // 10. Crear movimiento de inventario tipo AJUSTE_FISICO
@@ -357,47 +357,46 @@ public class InventoryServiceImpl implements InventoryService {
         // 3. Obtener stock actual del sistema
         Double systemStock = product.getStock().getQuantity().doubleValue();
         
-        // 4. Ajuste automático por ventas/compras posteriores al conteo físico
-        //    Descontar ventas y sumar compras que ocurrieron entre el momento del conteo y ahora
-        LocalDateTime countMoment = request.getCountDateTime() != null 
-                ? request.getCountDateTime() 
-                : DateTimeUtil.nowLocalDateTime();
+        // 4. Ajuste automático por ventas/compras desde la fecha indicada
+        LocalDateTime adjustmentFrom = request.getAdjustmentFromDate() != null 
+                ? request.getAdjustmentFromDate() 
+                : null;
         LocalDateTime now = DateTimeUtil.nowLocalDateTime();
         
-        Double soldAfterCount = 0.0;
-        Double purchasedAfterCount = 0.0;
+        Double totalSold = 0.0;
+        Double totalPurchased = 0.0;
         
-        if (countMoment.isBefore(now)) {
-            List<InventoryMovement> postCountMovements = movementRepository
+        if (adjustmentFrom != null && adjustmentFrom.isBefore(now)) {
+            List<InventoryMovement> movements = movementRepository
                     .findByProductIdAndMovementTypeInAndDateBetween(
                             request.getProductId(),
                             List.of(EMovementType.VENTA, EMovementType.COMPRA),
-                            countMoment,
+                            adjustmentFrom,
                             now
                     );
             
-            for (InventoryMovement mov : postCountMovements) {
+            for (InventoryMovement mov : movements) {
                 if (mov.getMovementType() == EMovementType.VENTA) {
-                    soldAfterCount += Math.abs(mov.getQuantity());
+                    totalSold += Math.abs(mov.getQuantity());
                 } else if (mov.getMovementType() == EMovementType.COMPRA) {
-                    purchasedAfterCount += Math.abs(mov.getQuantity());
+                    totalPurchased += Math.abs(mov.getQuantity());
                 }
             }
             
-            log.info("Producto {} - Ajuste post-conteo: vendido={}, comprado={} (entre {} y {})",
-                    product.getProductCode(), soldAfterCount, purchasedAfterCount,
-                    countMoment.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+            log.info("Producto {} - Ajuste: vendido={}, comprado={} (desde {} hasta {})",
+                    product.getProductCode(), totalSold, totalPurchased,
+                    adjustmentFrom.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
                     now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
         }
         
-        // 5. Calcular stock ajustado: conteo físico - ventas posteriores + compras posteriores
-        Double adjustedStock = totalPhysicalStock - soldAfterCount + purchasedAfterCount;
+        // 5. Calcular stock ajustado: conteo - ventas + compras
+        Double adjustedStock = totalPhysicalStock - totalSold + totalPurchased;
         
         // 6. Calcular diferencia basada en el stock ajustado
         Double difference = adjustedStock - systemStock;
         
-        log.info("Producto {} - Stock sistema: {}, Stock físico: {}, Vendido post-conteo: {}, Comprado post-conteo: {}, Stock ajustado: {}, Diferencia: {}",
-            product.getProductCode(), systemStock, totalPhysicalStock, soldAfterCount, purchasedAfterCount, adjustedStock, difference);
+        log.info("Producto {} - Stock sistema: {}, Stock físico: {}, Vendido: {}, Comprado: {}, Stock ajustado: {}, Diferencia: {}",
+            product.getProductCode(), systemStock, totalPhysicalStock, totalSold, totalPurchased, adjustedStock, difference);
         
         // 7. Actualizar stock del producto con el valor ajustado
         product.getStock().setQuantity(BigDecimal.valueOf(adjustedStock));
@@ -406,12 +405,11 @@ public class InventoryServiceImpl implements InventoryService {
         // 8. Construir notas detalladas con el desglose por presentación
         String detailedNotes = buildPresentationCountNotes(request, product);
         
-        // Agregar info del ajuste post-conteo a las notas
-        if (soldAfterCount > 0 || purchasedAfterCount > 0) {
+        if (totalSold > 0 || totalPurchased > 0) {
             detailedNotes += String.format(
-                    "\n--- AJUSTE POST-CONTEO ---\nConteo realizado: %s\nVendido después del conteo: %.2f\nComprado después del conteo: %.2f\nStock ajustado: %.2f",
-                    countMoment.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
-                    soldAfterCount, purchasedAfterCount, adjustedStock);
+                    "\n--- AJUSTE POR VENTAS/COMPRAS ---\nDesde: %s\nVendido: %.2f\nComprado: %.2f\nStock ajustado: %.2f",
+                    adjustmentFrom != null ? adjustmentFrom.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) : "N/A",
+                    totalSold, totalPurchased, adjustedStock);
         }
         
         // 9. Crear y guardar el registro de PhysicalInventory
@@ -421,9 +419,9 @@ public class InventoryServiceImpl implements InventoryService {
                 .product(buildProductReference(product))
                 .systemStock(systemStock)
                 .physicalStock(totalPhysicalStock)
-                .countDateTime(countMoment)
-                .soldAfterCount(soldAfterCount)
-                .purchasedAfterCount(purchasedAfterCount)
+                .adjustmentFromDate(adjustmentFrom)
+                .soldAfterCount(totalSold)
+                .purchasedAfterCount(totalPurchased)
                 .adjustedStock(adjustedStock)
                 .difference(difference)
                 .adjustmentReason(request.getAdjustmentReason())
