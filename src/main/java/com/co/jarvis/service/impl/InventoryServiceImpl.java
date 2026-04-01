@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -702,12 +703,7 @@ public class InventoryServiceImpl implements InventoryService {
         // Calcular valor total del inventario
         BigDecimal totalValue = allProducts.stream()
                 .filter(p -> p.getStock() != null && p.getPresentations() != null && !p.getPresentations().isEmpty())
-                .map(p -> {
-                    BigDecimal qty = p.getStock().getQuantity() != null ? p.getStock().getQuantity() : BigDecimal.ZERO;
-                    BigDecimal cost = p.getPresentations().get(0).getCostPrice() != null ? 
-                            p.getPresentations().get(0).getCostPrice() : BigDecimal.ZERO;
-                    return qty.multiply(cost);
-                })
+                .map(this::calculateProductInventoryValue)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         
         // Contar productos por nivel de stock
@@ -840,17 +836,16 @@ public class InventoryServiceImpl implements InventoryService {
             
             BigDecimal qty = product.getStock().getQuantity() != null ? 
                     product.getStock().getQuantity() : BigDecimal.ZERO;
-            BigDecimal cost = product.getPresentations().get(0).getCostPrice() != null ? 
-                    product.getPresentations().get(0).getCostPrice() : BigDecimal.ZERO;
-            BigDecimal value = qty.multiply(cost);
+            BigDecimal value = calculateProductInventoryValue(product);
             
             totalValue = totalValue.add(value);
             
             Map<String, Object> productVal = new HashMap<>();
             productVal.put("productId", product.getId());
             productVal.put("description", product.getDescription());
+            productVal.put("saleType", product.getSaleType() != null ? product.getSaleType().name() : "N/A");
             productVal.put("quantity", qty);
-            productVal.put("costPrice", cost);
+            productVal.put("unitMeasure", product.getStock().getUnitMeasure() != null ? product.getStock().getUnitMeasure().name() : "N/A");
             productVal.put("totalValue", value);
             productValuations.add(productVal);
         }
@@ -1040,5 +1035,94 @@ public class InventoryServiceImpl implements InventoryService {
             default:
                 return previousStock;
         }
+    }
+
+    /**
+     * Calcula el valor de inventario de un producto.
+     * 
+     * Para productos WEIGHT/LONGITUDE/VOLUME:
+     *   - Stock está en unidad base (kg, cm, etc.)
+     *   - Busca la presentación con mayor fixedAmount (packSize) como referencia de costo
+     *   - Calcula: (stock / packSize) * costoPorPack
+     *   - Si hay residuo y existe presentación a granel, suma: residuo * costoGranelPorUnidad
+     * 
+     * Para productos UNIT:
+     *   - stock * costPrice de la primera presentación
+     */
+    private BigDecimal calculateProductInventoryValue(Product product) {
+        BigDecimal qty = product.getStock().getQuantity() != null 
+                ? product.getStock().getQuantity() : BigDecimal.ZERO;
+        
+        if (qty.compareTo(BigDecimal.ZERO) <= 0 || product.getPresentations() == null || product.getPresentations().isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+
+        ESale saleType = product.getSaleType();
+
+        // Para productos UNIT u OTHER: simple qty * costPrice
+        if (saleType == null || saleType == ESale.UNIT || saleType == ESale.OTHER) {
+            BigDecimal cost = product.getPresentations().get(0).getCostPrice() != null 
+                    ? product.getPresentations().get(0).getCostPrice() : BigDecimal.ZERO;
+            return qty.multiply(cost);
+        }
+
+        // Para WEIGHT / LONGITUDE / VOLUME: stock en unidad base, calcular por packs
+        // Buscar presentación con mayor fixedAmount (bulto completo = packSize)
+        Presentation packPresentation = null;
+        BigDecimal largestFixedAmount = BigDecimal.ZERO;
+
+        for (Presentation p : product.getPresentations()) {
+            if (Boolean.TRUE.equals(p.getIsFixedAmount()) 
+                    && p.getFixedAmount() != null 
+                    && p.getFixedAmount().compareTo(largestFixedAmount) > 0) {
+                largestFixedAmount = p.getFixedAmount();
+                packPresentation = p;
+            }
+        }
+
+        // Si no hay presentación con fixedAmount, buscar cualquier presentación con costo
+        if (packPresentation == null || largestFixedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            // Fallback: buscar primera presentación con costo > 0
+            BigDecimal cost = product.getPresentations().stream()
+                    .filter(p -> p.getCostPrice() != null && p.getCostPrice().compareTo(BigDecimal.ZERO) > 0)
+                    .map(Presentation::getCostPrice)
+                    .findFirst()
+                    .orElse(BigDecimal.ZERO);
+            // Sin packSize, no podemos calcular bien, usar costo por unidad base
+            return qty.multiply(cost);
+        }
+
+        // packSize = fixedAmount del bulto completo (ej: 40 kg)
+        BigDecimal packSize = largestFixedAmount;
+        BigDecimal packCost = packPresentation.getCostPrice() != null 
+                ? packPresentation.getCostPrice() : BigDecimal.ZERO;
+
+        // Calcular: cuántos packs completos + residuo
+        BigDecimal[] divResult = qty.divideAndRemainder(packSize);
+        BigDecimal packs = divResult[0];
+        BigDecimal remainder = divResult[1];
+
+        // Valor por packs completos
+        BigDecimal totalValue = packs.multiply(packCost);
+
+        // Valor del residuo: buscar presentación a granel para costo por unidad base
+        if (remainder.compareTo(BigDecimal.ZERO) > 0) {
+            Presentation bulkPresentation = product.getPresentations().stream()
+                    .filter(p -> Boolean.TRUE.equals(p.getIsBulk()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (bulkPresentation != null && bulkPresentation.getCostPrice() != null 
+                    && bulkPresentation.getCostPrice().compareTo(BigDecimal.ZERO) > 0) {
+                // Costo granel es por unidad base (ej: por kg)
+                totalValue = totalValue.add(remainder.multiply(bulkPresentation.getCostPrice()));
+            } else {
+                // Sin granel: prorratear costo del pack
+                BigDecimal costPerUnit = packCost.divide(packSize, 4, RoundingMode.HALF_UP);
+                totalValue = totalValue.add(remainder.multiply(costPerUnit));
+            }
+        }
+
+        return totalValue.setScale(2, RoundingMode.HALF_UP);
     }
 }
