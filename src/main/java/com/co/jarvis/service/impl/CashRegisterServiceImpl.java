@@ -336,17 +336,26 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         for (Billing billing : billings) {
             // Solo incluir pagos en EFECTIVO para el arqueo de caja
             if (billing.getPayments() != null && !billing.getPayments().isEmpty()) {
-                for (PaymentEntry payment : billing.getPayments()) {
-                    EPaymentMethod method = parsePaymentMethod(payment.getMethod());
-                    if (method != EPaymentMethod.EFECTIVO) continue;
+                // Calcular cuánto se pagó por métodos NO efectivo
+                BigDecimal nonCashTotal = billing.getPayments().stream()
+                        .filter(p -> parsePaymentMethod(p.getMethod()) != EPaymentMethod.EFECTIVO)
+                        .map(PaymentEntry::getAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                // El efectivo real que queda en caja = total venta - pagos no efectivo
+                BigDecimal effectiveCash = billing.getTotalBilling().subtract(nonCashTotal);
+
+                boolean hasCashPayment = billing.getPayments().stream()
+                        .anyMatch(p -> parsePaymentMethod(p.getMethod()) == EPaymentMethod.EFECTIVO);
+
+                if (hasCashPayment && effectiveCash.compareTo(BigDecimal.ZERO) > 0) {
                     transactions.add(CashTransactionDto.builder()
-                            .id(billing.getId() + "-" + payment.getMethod())
+                            .id(billing.getId() + "-EFECTIVO")
                             .type(ETransactionType.INGRESO)
                             .category(ETransactionCategory.VENTA)
                             .description("Venta #" + billing.getBillNumber())
-                            .amount(payment.getAmount())
+                            .amount(effectiveCash)
                             .paymentMethod(EPaymentMethod.EFECTIVO)
-                            .reference(payment.getReference())
                             .transactionDate(billing.getDateTimeRecord().toLocalDateTime())
                             .relatedDocumentId(billing.getId())
                             .build());
