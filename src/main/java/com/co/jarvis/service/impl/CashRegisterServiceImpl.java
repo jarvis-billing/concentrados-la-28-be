@@ -372,20 +372,6 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 }
             }
 
-            // Registrar el cambio/vuelto entregado como egreso en efectivo
-            if (billing.getReturnedValue() != null && 
-                    billing.getReturnedValue().compareTo(BigDecimal.ZERO) > 0) {
-                transactions.add(CashTransactionDto.builder()
-                        .id(billing.getId() + "-cambio")
-                        .type(ETransactionType.EGRESO)
-                        .category(ETransactionCategory.AJUSTE)
-                        .description("Cambio venta #" + billing.getBillNumber())
-                        .amount(billing.getReturnedValue())
-                        .paymentMethod(EPaymentMethod.EFECTIVO)
-                        .transactionDate(billing.getDateTimeRecord().toLocalDateTime())
-                        .relatedDocumentId(billing.getId())
-                        .build());
-            }
         }
         
         return transactions;
