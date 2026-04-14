@@ -188,6 +188,18 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         // Calcular flujo neto
         session.setNetCashFlow(dailySummary.getTotalIncome().subtract(dailySummary.getTotalExpense()));
 
+        // Diagnóstico detallado del arqueo
+        log.info("=== DIAGNÓSTICO ARQUEO {} ===", request.getSessionDate());
+        log.info("  openingBalance:     {}", request.getOpeningBalance());
+        log.info("  cashIncome (EFEC):  {}", dailySummary.getTotalIncome());
+        log.info("  cashExpense (EFEC): {}", dailySummary.getTotalExpense());
+        log.info("  expectedCashAmount: {} (income - expense)", dailySummary.getExpectedCashAmount());
+        log.info("  expectedCashTotal:  {} (opening + expectedCashAmount)", expectedCashTotal);
+        log.info("  countedCash:        {} (suma denominaciones)", totalCounted);
+        log.info("  difference:         {} (counted - expectedTotal)", totalCounted.subtract(expectedCashTotal));
+        log.info("  transacciones:      {}", dailySummary.getTransactions() != null ? dailySummary.getTransactions().size() : 0);
+        log.info("=== FIN DIAGNÓSTICO ===");
+
         // Guardar
         session = cashCountSessionRepository.save(session);
         log.info("Cash count session saved with ID: {}", session.getId());
