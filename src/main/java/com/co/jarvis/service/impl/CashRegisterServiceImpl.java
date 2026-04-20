@@ -33,6 +33,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
     private final ClientCreditRepository clientCreditRepository;
     private final ClientAccountRepository clientAccountRepository;
     private final CashLoanRepository cashLoanRepository;
+    private final InternalTransferRepository internalTransferRepository;
     private final MongoTemplate mongoTemplate;
 
     // Denominaciones colombianas
@@ -76,6 +77,9 @@ public class CashRegisterServiceImpl implements CashRegisterService {
 
         // 6. Obtener préstamos de caja del día
         transactions.addAll(getCashLoanTransactions(date));
+
+        // 7. Obtener traslados de efectivo a banco del día (salidas justificadas)
+        transactions.addAll(getInternalTransferTransactions(date));
 
         // Calcular totales — todas las transacciones son solo EFECTIVO
         BigDecimal totalIncome = transactions.stream()
@@ -577,6 +581,63 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         }
 
         return transactions;
+    }
+
+    private List<CashTransactionDto> getInternalTransferTransactions(LocalDate date) {
+        List<InternalTransfer> transfers = internalTransferRepository
+                .findByTransferDateAndStatus(date, EInternalTransferStatus.ACTIVO);
+
+        return transfers.stream()
+                .map(t -> CashTransactionDto.builder()
+                        .id(t.getId())
+                        .type(ETransactionType.EGRESO)
+                        .category(ETransactionCategory.TRASLADO_BANCO)
+                        .description(buildTransferDescription(t))
+                        .amount(t.getAmount())
+                        .paymentMethod(EPaymentMethod.EFECTIVO)
+                        .reference(t.getReference())
+                        .transactionDate(t.getTransferDateTime() != null
+                                ? t.getTransferDateTime() : date.atStartOfDay())
+                        .relatedDocumentId(t.getId())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    private String buildTransferDescription(InternalTransfer t) {
+        StringBuilder sb = new StringBuilder("Traslado a banco");
+        if (t.getDestinationBankName() != null && !t.getDestinationBankName().isBlank()) {
+            sb.append(" - ").append(t.getDestinationBankName());
+        }
+        if (t.getDestinationAccountNumber() != null && !t.getDestinationAccountNumber().isBlank()) {
+            sb.append(" (").append(t.getDestinationAccountNumber()).append(")");
+        }
+        return sb.toString();
+    }
+
+    @Override
+    public BigDecimal getCurrentCashBalance(LocalDate date) {
+        log.info("CashRegisterServiceImpl -> getCurrentCashBalance: {}", date);
+
+        // Saldo de apertura: tomar arqueo EN_PROGRESO del día si existe, sino último cerrado
+        BigDecimal openingBalance = cashCountSessionRepository.findBySessionDate(date)
+                .filter(s -> s.getStatus() != ECashCountStatus.ANULADO)
+                .map(CashCountSession::getOpeningBalance)
+                .orElseGet(() -> {
+                    List<CashCountSession> lastClosed = cashCountSessionRepository.findLastClosedSession();
+                    if (lastClosed == null || lastClosed.isEmpty()) {
+                        return BigDecimal.ZERO;
+                    }
+                    BigDecimal lastCounted = lastClosed.get(0).getTotalCashCounted();
+                    return lastCounted != null ? lastCounted : BigDecimal.ZERO;
+                });
+
+        DailySummaryResponse summary = getDailySummary(date);
+        BigDecimal netMovements = summary.getTotalIncome().subtract(summary.getTotalExpense());
+
+        BigDecimal balance = openingBalance.add(netMovements);
+        log.info("  opening={}, netCashMovements={}, currentCashBalance={}",
+                openingBalance, netMovements, balance);
+        return balance;
     }
 
     private List<PaymentMethodSummaryDto> calculatePaymentMethodSummaries(List<CashTransactionDto> transactions) {

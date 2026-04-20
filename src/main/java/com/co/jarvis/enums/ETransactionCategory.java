@@ -6,5 +6,6 @@ public enum ETransactionCategory {
     DEPOSITO_ANTICIPO,
     GASTO,
     PAGO_PROVEEDOR,
-    AJUSTE
+    AJUSTE,
+    TRASLADO_BANCO
 }

@@ -83,4 +83,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Object> handlePasswordBadException(ResourceEndException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
     }
+
+    @ExceptionHandler(InsufficientFundsException.class)
+    public ResponseEntity<Object> handleInsufficientFundsException(InsufficientFundsException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("message", ex.getMessage());
+        body.put("error", "INSUFFICIENT_FUNDS");
+        if (ex.getRequestedAmount() != null) {
+            body.put("requestedAmount", ex.getRequestedAmount());
+        }
+        if (ex.getAvailableAmount() != null) {
+            body.put("availableAmount", ex.getAvailableAmount());
+        }
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
+    }
 }
