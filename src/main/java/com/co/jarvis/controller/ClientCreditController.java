@@ -5,6 +5,7 @@ import com.co.jarvis.dto.CreditReportFilter;
 import com.co.jarvis.dto.CreditSummary;
 import com.co.jarvis.dto.DepositCreditRequest;
 import com.co.jarvis.dto.ManualCreditRequest;
+import com.co.jarvis.dto.RefundCreditRequest;
 import com.co.jarvis.dto.UseCreditRequest;
 import com.co.jarvis.entity.ClientCredit;
 import com.co.jarvis.entity.CreditTransaction;
@@ -119,6 +120,42 @@ public class ClientCreditController {
                 return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
             }
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * POST /api/client-credits/refund
+     * Procesa una devolución de anticipo (saldo a favor) a un cliente.
+     * Crea una transacción de tipo REFUND y actualiza el saldo del cliente.
+     */
+    @PostMapping("/refund")
+    public ResponseEntity<?> processRefund(
+            @RequestBody RefundCreditRequest request,
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        log.info("ClientCreditController -> processRefund: clientId={}, amount={}, paymentMethod={}",
+                request.getClientId(), request.getAmount(), request.getPaymentMethod());
+
+        try {
+            CreditTransaction transaction = clientCreditService.processRefund(request, userId);
+            return ResponseEntity.ok(transaction);
+        } catch (RuntimeException e) {
+            log.error("Error processing refund: {}", e.getMessage());
+            String message = e.getMessage();
+
+            // Manejar diferentes tipos de errores
+            if (message.contains("CLIENT_NOT_FOUND")) {
+                return ResponseEntity.status(404).body(Map.of("error", "CLIENT_NOT_FOUND", "message", message.replace("CLIENT_NOT_FOUND: ", "")));
+            } else if (message.contains("CLIENT_CREDIT_NOT_FOUND")) {
+                return ResponseEntity.status(404).body(Map.of("error", "CLIENT_CREDIT_NOT_FOUND", "message", message.replace("CLIENT_CREDIT_NOT_FOUND: ", "")));
+            } else if (message.contains("INVALID_AMOUNT")) {
+                return ResponseEntity.status(400).body(Map.of("error", "INVALID_AMOUNT", "message", message.replace("INVALID_AMOUNT: ", "")));
+            } else if (message.contains("INVALID_PAYMENT_METHOD")) {
+                return ResponseEntity.status(400).body(Map.of("error", "INVALID_PAYMENT_METHOD", "message", message.replace("INVALID_PAYMENT_METHOD: ", "")));
+            } else if (message.contains("INSUFFICIENT_BALANCE")) {
+                return ResponseEntity.status(400).body(Map.of("error", "INSUFFICIENT_BALANCE", "message", message.replace("INSUFFICIENT_BALANCE: ", "")));
+            }
+
+            return ResponseEntity.badRequest().body(Map.of("error", "REFUND_ERROR", "message", message));
         }
     }
 }

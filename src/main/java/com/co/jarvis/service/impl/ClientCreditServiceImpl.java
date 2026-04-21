@@ -5,6 +5,7 @@ import com.co.jarvis.dto.CreditReportFilter;
 import com.co.jarvis.dto.CreditSummary;
 import com.co.jarvis.dto.DepositCreditRequest;
 import com.co.jarvis.dto.ManualCreditRequest;
+import com.co.jarvis.dto.RefundCreditRequest;
 import com.co.jarvis.dto.UseCreditRequest;
 import com.co.jarvis.entity.Client;
 import com.co.jarvis.entity.ClientCredit;
@@ -362,6 +363,66 @@ public class ClientCreditServiceImpl implements ClientCreditService {
 
         clientCreditRepository.save(credit);
         log.info("Manual credit registered successfully. New balance: {}", credit.getCurrentBalance());
+
+        return transaction;
+    }
+
+    @Override
+    @Transactional
+    public CreditTransaction processRefund(RefundCreditRequest request, String createdBy) {
+        log.info("ClientCreditServiceImpl -> processRefund: clientId={}, amount={}, paymentMethod={}",
+                request.getClientId(), request.getAmount(), request.getPaymentMethod());
+
+        // Validar que el cliente existe
+        if (!clientRepository.existsById(request.getClientId())) {
+            throw new RuntimeException("CLIENT_NOT_FOUND: El cliente no existe");
+        }
+
+        // Validar monto positivo
+        if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("INVALID_AMOUNT: El monto debe ser mayor a 0");
+        }
+
+        // Validar método de pago
+        if (request.getPaymentMethod() == null) {
+            throw new RuntimeException("INVALID_PAYMENT_METHOD: Método de pago no válido");
+        }
+
+        // Buscar el crédito del cliente
+        ClientCredit credit = clientCreditRepository.findByClientId(request.getClientId())
+                .orElseThrow(() -> new RuntimeException("CLIENT_CREDIT_NOT_FOUND: El cliente no tiene registro de saldo a favor"));
+
+        // Validar saldo suficiente
+        if (request.getAmount().compareTo(credit.getCurrentBalance()) > 0) {
+            throw new RuntimeException("INSUFFICIENT_BALANCE: El monto excede el saldo disponible. Saldo actual: " + credit.getCurrentBalance());
+        }
+
+        // Calcular nuevo saldo
+        BigDecimal newBalance = credit.getCurrentBalance().subtract(request.getAmount());
+
+        // Crear la transacción de devolución
+        CreditTransaction transaction = CreditTransaction.builder()
+                .id(UUID.randomUUID().toString())
+                .type(ECreditTransactionType.REFUND)
+                .amount(request.getAmount())
+                .balanceAfter(newBalance)
+                .paymentMethod(request.getPaymentMethod())
+                .reference(request.getReference())
+                .notes(request.getNotes())
+                .transactionDate(LocalDateTime.now())
+                .createdBy(createdBy)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        // Actualizar el crédito del cliente
+        credit.getTransactions().add(transaction);
+        credit.setTotalUsed(credit.getTotalUsed().add(request.getAmount()));
+        credit.setCurrentBalance(newBalance);
+        credit.setLastTransactionDate(LocalDateTime.now());
+        credit.setUpdatedAt(LocalDateTime.now());
+
+        clientCreditRepository.save(credit);
+        log.info("Refund processed successfully. New balance: {}", credit.getCurrentBalance());
 
         return transaction;
     }

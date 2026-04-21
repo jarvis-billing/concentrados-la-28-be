@@ -5,6 +5,7 @@ import com.co.jarvis.dto.CreditReportFilter;
 import com.co.jarvis.dto.CreditSummary;
 import com.co.jarvis.dto.DepositCreditRequest;
 import com.co.jarvis.dto.ManualCreditRequest;
+import com.co.jarvis.dto.RefundCreditRequest;
 import com.co.jarvis.dto.UseCreditRequest;
 import com.co.jarvis.entity.ClientCredit;
 import com.co.jarvis.entity.CreditTransaction;
@@ -27,6 +28,16 @@ public interface ClientCreditService {
     CreditTransaction useCredit(UseCreditRequest request, String createdBy);
 
     CreditTransaction adjustCredit(AdjustCreditRequest request, String createdBy);
+
+    /**
+     * Procesa una devolución de anticipo (saldo a favor) a un cliente.
+     * Crea una transacción de tipo REFUND y actualiza el saldo del cliente.
+     * También registra una transacción de caja para el arqueo.
+     * @param request Datos de la devolución
+     * @param createdBy Usuario que procesa la devolución
+     * @return Transacción de devolución creada
+     */
+    CreditTransaction processRefund(RefundCreditRequest request, String createdBy);
 
     List<CreditSummary> generateReport(CreditReportFilter filter);
 

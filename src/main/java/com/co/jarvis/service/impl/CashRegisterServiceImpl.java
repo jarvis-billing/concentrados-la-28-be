@@ -69,6 +69,9 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         // 3. Obtener depósitos/anticipos (saldos a favor)
         transactions.addAll(getDepositTransactions(date));
 
+        // 3.5. Obtener devoluciones de anticipos (saldos a favor)
+        transactions.addAll(getRefundTransactions(date));
+
         // 4. Obtener gastos
         transactions.addAll(getExpenseTransactions(date));
 
@@ -485,6 +488,45 @@ public class CashRegisterServiceImpl implements CashRegisterService {
             }
         }
         
+        return transactions;
+    }
+
+    private List<CashTransactionDto> getRefundTransactions(LocalDate date) {
+        // Devoluciones de anticipos (saldos a favor) desde ClientCredit.transactions[]
+        List<CashTransactionDto> transactions = new ArrayList<>();
+
+        List<ClientCredit> allCredits = clientCreditRepository.findAll();
+        for (ClientCredit credit : allCredits) {
+            if (credit.getTransactions() != null) {
+                for (CreditTransaction ct : credit.getTransactions()) {
+                    // Solo reembolsos en EFECTIVO para el arqueo
+                    EPaymentMethod method = ct.getPaymentMethod() != null ?
+                            ct.getPaymentMethod() : EPaymentMethod.EFECTIVO;
+                    if (method != EPaymentMethod.EFECTIVO) continue;
+
+                    if (ct.getType() == ECreditTransactionType.REFUND &&
+                        ct.getTransactionDate() != null &&
+                        ct.getTransactionDate().toLocalDate().equals(date)) {
+
+                        String clientName = credit.getClient() != null ?
+                                credit.getClient().getFullName() : "Cliente";
+
+                        transactions.add(CashTransactionDto.builder()
+                                .id(ct.getId())
+                                .type(ETransactionType.EGRESO)
+                                .category(ETransactionCategory.DEVOLUCION_ANTICIPO)
+                                .description("Devolución saldo a favor - " + clientName)
+                                .amount(ct.getAmount())
+                                .paymentMethod(EPaymentMethod.EFECTIVO)
+                                .reference(ct.getReference())
+                                .transactionDate(ct.getTransactionDate())
+                                .relatedDocumentId(credit.getId())
+                                .build());
+                    }
+                }
+            }
+        }
+
         return transactions;
     }
 
