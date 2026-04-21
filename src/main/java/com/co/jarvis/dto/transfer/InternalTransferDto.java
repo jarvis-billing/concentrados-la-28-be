@@ -25,7 +25,6 @@ public class InternalTransferDto implements Serializable {
     private BigDecimal amount;
     private EInternalTransferType type;
     private String sourceId;
-    private String destinationBankAccountId;
     private String destinationBankName;
     private String destinationAccountNumber;
     private EBankAccount destinationAccountType;
@@ -37,4 +36,6 @@ public class InternalTransferDto implements Serializable {
     private LocalDateTime cancelledAt;
     private String cancelReason;
     private LocalDateTime createdAt;
+    private String supportFileName;
+    private String supportFileUrl;
 }

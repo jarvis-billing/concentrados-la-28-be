@@ -15,7 +15,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -46,10 +48,9 @@ public class InternalTransferServiceImpl implements InternalTransferService {
      */
     @Override
     @Transactional
-    public InternalTransferDto transferCashToBank(CashToBankTransferRequest request, UserDto user) {
-        log.info("InternalTransferServiceImpl -> transferCashToBank: amount={}, bankAccountId={}",
-                request != null ? request.getAmount() : null,
-                request != null ? request.getBankAccountId() : null);
+    public InternalTransferDto transferCashToBank(CashToBankTransferRequest request, MultipartFile supportFile, UserDto user) {
+        log.info("InternalTransferServiceImpl -> transferCashToBank: amount={}",
+                request != null ? request.getAmount() : null);
 
         validateCashToBankRequest(request);
 
@@ -71,7 +72,6 @@ public class InternalTransferServiceImpl implements InternalTransferService {
                 .amount(request.getAmount())
                 .type(EInternalTransferType.TRASLADO_EFECTIVO_BANCO)
                 .sourceId(DEFAULT_SOURCE_ID)
-                .destinationBankAccountId(request.getBankAccountId())
                 .destinationBankName(request.getBankName())
                 .destinationAccountNumber(request.getAccountNumber())
                 .destinationAccountType(request.getAccountType())
@@ -176,9 +176,7 @@ public class InternalTransferServiceImpl implements InternalTransferService {
         if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("El monto del traslado debe ser mayor a cero");
         }
-        if (request.getBankAccountId() == null || request.getBankAccountId().isBlank()) {
-            throw new IllegalArgumentException("Debe especificar la cuenta bancaria de destino");
-        }
+    
         if (request.getReference() == null || request.getReference().isBlank()) {
             throw new IllegalArgumentException("Debe especificar el número de comprobante");
         }
@@ -198,7 +196,6 @@ public class InternalTransferServiceImpl implements InternalTransferService {
                 .amount(t.getAmount())
                 .type(t.getType())
                 .sourceId(t.getSourceId())
-                .destinationBankAccountId(t.getDestinationBankAccountId())
                 .destinationBankName(t.getDestinationBankName())
                 .destinationAccountNumber(t.getDestinationAccountNumber())
                 .destinationAccountType(t.getDestinationAccountType())
@@ -211,5 +208,17 @@ public class InternalTransferServiceImpl implements InternalTransferService {
                 .cancelReason(t.getCancelReason())
                 .createdAt(t.getCreatedAt())
                 .build();
+    }
+
+    @Override
+    public byte[] getSupport(String id) throws IOException {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getSupport'");
+    }
+
+    @Override
+    public String getSupportContentType(String id) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getSupportContentType'");
     }
 }

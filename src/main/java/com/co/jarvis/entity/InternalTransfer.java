@@ -96,4 +96,21 @@ public class InternalTransfer {
 
     @Field("snapshot_calculated_at")
     private LocalDateTime snapshotCalculatedAt;
+
+    /**
+     * Archivo soporte (comprobante) asociado a la consignación.
+     * {@code supportFileUrl} es el endpoint público para descargarlo;
+     * {@code supportFilePath} es la ruta en el filesystem (no se expone al cliente).
+     */
+    @Field("support_file_name")
+    private String supportFileName;
+
+    @Field("support_file_url")
+    private String supportFileUrl;
+
+    @Field("support_file_path")
+    private String supportFilePath;
+
+    @Field("support_file_content_type")
+    private String supportFileContentType;
 }

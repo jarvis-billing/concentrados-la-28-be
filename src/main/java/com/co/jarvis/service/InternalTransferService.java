@@ -5,7 +5,9 @@ import com.co.jarvis.dto.transfer.CashToBankTransferRequest;
 import com.co.jarvis.dto.transfer.InternalTransferDto;
 import com.co.jarvis.enums.EInternalTransferStatus;
 import com.co.jarvis.enums.EInternalTransferType;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -13,11 +15,23 @@ public interface InternalTransferService {
 
     /**
      * Registra una consignación de efectivo desde la caja hacia un banco.
-     * Valida que la caja tenga saldo suficiente antes de persistir el movimiento.
+     * @param supportFile archivo soporte opcional (pdf/png/jpeg/webp, &lt;= 5 MB).
      */
-    InternalTransferDto transferCashToBank(CashToBankTransferRequest request, UserDto user);
+    InternalTransferDto transferCashToBank(CashToBankTransferRequest request,
+                                           MultipartFile supportFile,
+                                           UserDto user) throws IOException;
 
     InternalTransferDto getById(String id);
+
+    /**
+     * Devuelve los bytes del archivo soporte asociado a un traslado.
+     */
+    byte[] getSupport(String id) throws IOException;
+
+    /**
+     * Devuelve el content-type almacenado o detectado del archivo soporte.
+     */
+    String getSupportContentType(String id);
 
     /**
      * Anula un traslado previamente registrado. El efectivo "regresa" virtualmente

@@ -25,15 +25,14 @@ public class CashToBankTransferRequest implements Serializable {
     private BigDecimal amount;
 
     /**
-     * Identifier of the destination bank account (required).
+     * Bank account number of destination (required).
      */
-    private String bankAccountId;
+    private String accountNumber;
 
     /**
      * Optional descriptive fields for the bank account (stored for auditing).
      */
     private String bankName;
-    private String accountNumber;
     private EBankAccount accountType;
 
     /**

@@ -15,7 +15,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -30,15 +32,18 @@ public class InternalTransferController {
 
     /**
      * POST /api/v1/transfers/cash-to-bank
-     * Registra una consignación de efectivo desde la caja hacia una cuenta bancaria.
+     * Registra una consignación de efectivo desde la caja hacia una cuenta
+     * bancaria.
+     * 
+     * @throws IOException
      */
-    @PostMapping(value = "/cash-to-bank", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/cash-to-bank", consumes = MediaType.MULTIPART_FORM_DATA_VALUE )
     public ResponseEntity<InternalTransferDto> transferCashToBank(
-            @RequestBody CashToBankTransferRequest request) {
+            @RequestPart(value = "request", required = true) CashToBankTransferRequest request) throws IOException {
         log.info("InternalTransferController -> transferCashToBank: amount={}",
                 request != null ? request.getAmount() : null);
         UserDto user = getAuthenticatedUser();
-        InternalTransferDto result = internalTransferService.transferCashToBank(request, user);
+        InternalTransferDto result = internalTransferService.transferCashToBank(request, null, user);
         return ResponseEntity.status(HttpStatus.CREATED).body(result);
     }
 
@@ -68,7 +73,8 @@ public class InternalTransferController {
     }
 
     /**
-     * GET /api/v1/transfers?fromDate=2026-04-01&toDate=2026-04-30&type=TRASLADO_EFECTIVO_BANCO&status=ACTIVO
+     * GET
+     * /api/v1/transfers?fromDate=2026-04-01&toDate=2026-04-30&type=TRASLADO_EFECTIVO_BANCO&status=ACTIVO
      * Lista traslados con filtros opcionales.
      */
     @GetMapping
