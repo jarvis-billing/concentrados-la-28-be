@@ -23,4 +23,25 @@ public class AuditEntry {
     private EAuditAction action;    // Tipo de operación realizada
     private LocalDateTime timestamp;
     private String details;         // Notas opcionales sobre la operación
+
+    /**
+     * Referencia al sub-elemento afectado dentro de la entidad (opcional).
+     * Ejemplos: "presentation:7702001123456" para identificar una presentación por barcode.
+     */
+    private String entityRef;
+
+    /**
+     * Nombre del campo modificado (opcional). Ejemplos: "salePrice", "costPrice", "stock".
+     */
+    private String fieldName;
+
+    /**
+     * Valor anterior del campo, serializado como texto (opcional).
+     */
+    private String oldValue;
+
+    /**
+     * Valor nuevo del campo, serializado como texto (opcional).
+     */
+    private String newValue;
 }

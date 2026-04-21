@@ -20,4 +20,8 @@ public class AuditEntryDto implements Serializable {
     private EAuditAction action;
     private LocalDateTime timestamp;
     private String details;
+    private String entityRef;
+    private String fieldName;
+    private String oldValue;
+    private String newValue;
 }

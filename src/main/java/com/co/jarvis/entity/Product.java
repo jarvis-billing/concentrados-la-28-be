@@ -12,6 +12,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 
 @NoArgsConstructor
@@ -35,6 +36,14 @@ public class Product {
     private EVat vatType;
     private List<Presentation> presentations;
     private Stock stock;
+
+    /**
+     * Historial de auditoría con el detalle de los cambios realizados sobre
+     * el producto (ej. actualizaciones de precios por presentación).
+     */
+    @Field("audit_trail")
+    @Builder.Default
+    private List<AuditEntry> auditTrail = new ArrayList<>();
 
     public boolean hasStock(BigDecimal amount) {
         return stock.getQuantity().compareTo(amount) >= 0;

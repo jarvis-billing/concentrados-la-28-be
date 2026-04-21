@@ -1,8 +1,10 @@
 package com.co.jarvis.controller;
 
+import com.co.jarvis.dto.BulkPresentationPriceUpdateRequest;
+import com.co.jarvis.dto.BulkPresentationPriceUpdateResponse;
 import com.co.jarvis.dto.PaginationDto;
 import com.co.jarvis.dto.ProductDto;
-import com.co.jarvis.dto.ProductPriceDto;
+import com.co.jarvis.dto.UserDto;
 import com.co.jarvis.service.CatalogService;
 import com.co.jarvis.service.ProductService;
 import com.co.jarvis.service.impl.LoginUserService;
@@ -74,11 +76,20 @@ public class ProductController extends GenericController<ProductDto, ProductServ
         return ResponseEntity.ok(service.findAllPageSearch(pageNumber, pageSize, search));
     }
 
-    @PostMapping("/updatePrice")
-    public ResponseEntity<Void> updatePriceByIds(@Valid @RequestBody ProductPriceDto dto) {
-        logger.info("BaseController -> save");
-        getService().updatePriceByIds(dto.getPrice(), dto.getIds());
-        return ResponseEntity.noContent().build();
+    /**
+     * POST /api/product/presentations/bulk-price-update
+     * Actualiza en bloque los precios de venta y/o costo de múltiples presentaciones
+     * identificadas por productId + barcode. Soporta errores parciales.
+     */
+    @PostMapping(value = "/presentations/bulk-price-update", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<BulkPresentationPriceUpdateResponse> bulkUpdatePresentationPrices(
+            @Valid @RequestBody BulkPresentationPriceUpdateRequest request) {
+        UserDto user = loginUserService.getUserLoginContext();
+        logger.info("ProductController -> bulkUpdatePresentationPrices: entries={}, user={}",
+                request.getUpdates() != null ? request.getUpdates().size() : 0,
+                user != null ? user.getNumberIdentity() : "unknown");
+        BulkPresentationPriceUpdateResponse response = service.bulkUpdatePresentationPrices(request, user);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping(value = "/validateOrGenerateBarcode", produces = MediaType.APPLICATION_JSON_VALUE)

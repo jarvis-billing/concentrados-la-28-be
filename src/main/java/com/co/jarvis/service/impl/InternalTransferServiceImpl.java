@@ -10,7 +10,6 @@ import com.co.jarvis.repository.InternalTransferRepository;
 import com.co.jarvis.service.CashRegisterService;
 import com.co.jarvis.service.InternalTransferService;
 import com.co.jarvis.util.DateTimeUtil;
-import com.co.jarvis.util.exception.InsufficientFundsException;
 import com.co.jarvis.util.exception.ResourceNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +31,19 @@ public class InternalTransferServiceImpl implements InternalTransferService {
     private final InternalTransferRepository internalTransferRepository;
     private final CashRegisterService cashRegisterService;
 
+    /**
+     * Registra una consignación de efectivo desde la caja hacia un banco.
+     *
+     * NOTA: No se valida que el efectivo del sistema sea suficiente porque, en la
+     * operación real, los ingresos (ventas, pagos de crédito, anticipos) se capturan
+     * a destiempo. El sistema no es fuente de verdad del efectivo físico; esa
+     * conciliación ocurre en el arqueo de caja diario.
+     *
+     * Se persiste un snapshot informativo del saldo calculado al momento del registro
+     * ({@link InternalTransfer#getSystemCashSnapshot()}) para auditoría posterior —
+     * por ejemplo, detectar ventas pendientes de capturar cuando la consignación
+     * excede el saldo que el sistema creía tener.
+     */
     @Override
     @Transactional
     public InternalTransferDto transferCashToBank(CashToBankTransferRequest request, UserDto user) {
@@ -45,12 +57,12 @@ public class InternalTransferServiceImpl implements InternalTransferService {
                 ? request.getTransferDate()
                 : LocalDate.now(DateTimeUtil.getBogotaZone());
 
-        // Validar saldo disponible en caja ANTES de registrar el movimiento
-        BigDecimal availableCash = cashRegisterService.getCurrentCashBalance(transferDate);
-        if (request.getAmount().compareTo(availableCash) > 0) {
-            log.warn("Intento de traslado rechazado por saldo insuficiente. Solicitado={}, disponible={}",
-                    request.getAmount(), availableCash);
-            throw new InsufficientFundsException(request.getAmount(), availableCash);
+        // Snapshot informativo — NO se valida, solo se guarda para auditoría.
+        BigDecimal systemCashSnapshot = safeGetCurrentCashBalance(transferDate);
+        if (systemCashSnapshot != null && request.getAmount().compareTo(systemCashSnapshot) > 0) {
+            log.info("Consignación mayor al saldo calculado (posibles ingresos sin capturar). " +
+                            "Solicitado={}, snapshot={}, fecha={}",
+                    request.getAmount(), systemCashSnapshot, transferDate);
         }
 
         InternalTransfer transfer = InternalTransfer.builder()
@@ -69,13 +81,30 @@ public class InternalTransferServiceImpl implements InternalTransferService {
                 .notes(request.getNotes())
                 .status(EInternalTransferStatus.ACTIVO)
                 .createdAt(DateTimeUtil.nowLocalDateTime())
+                .systemCashSnapshot(systemCashSnapshot)
+                .snapshotCalculatedAt(systemCashSnapshot != null
+                        ? DateTimeUtil.nowLocalDateTime() : null)
                 .build();
 
         transfer = internalTransferRepository.save(transfer);
-        log.info("Traslado efectivo a banco registrado. id={}, monto={}, banco={}",
-                transfer.getId(), transfer.getAmount(), transfer.getDestinationBankName());
+        log.info("Traslado efectivo a banco registrado. id={}, monto={}, banco={}, snapshot={}",
+                transfer.getId(), transfer.getAmount(), transfer.getDestinationBankName(),
+                transfer.getSystemCashSnapshot());
 
         return mapToDto(transfer);
+    }
+
+    /**
+     * Calcula el saldo de caja del sistema de forma defensiva: si algo falla,
+     * no bloquea el registro — solo omite el snapshot.
+     */
+    private BigDecimal safeGetCurrentCashBalance(LocalDate date) {
+        try {
+            return cashRegisterService.getCurrentCashBalance(date);
+        } catch (RuntimeException ex) {
+            log.warn("No se pudo calcular el snapshot de caja para {}: {}", date, ex.getMessage());
+            return null;
+        }
     }
 
     @Override
@@ -152,6 +181,12 @@ public class InternalTransferServiceImpl implements InternalTransferService {
         }
         if (request.getReference() == null || request.getReference().isBlank()) {
             throw new IllegalArgumentException("Debe especificar el número de comprobante");
+        }
+        if (request.getTransferDate() != null) {
+            LocalDate today = LocalDate.now(DateTimeUtil.getBogotaZone());
+            if (request.getTransferDate().isAfter(today)) {
+                throw new IllegalArgumentException("La fecha del traslado no puede ser futura");
+            }
         }
     }
 

@@ -84,6 +84,8 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.getMessage());
     }
 
+    @SuppressWarnings("removal")
+    @Deprecated(forRemoval = true)
     @ExceptionHandler(InsufficientFundsException.class)
     public ResponseEntity<Object> handleInsufficientFundsException(InsufficientFundsException ex) {
         Map<String, Object> body = new HashMap<>();

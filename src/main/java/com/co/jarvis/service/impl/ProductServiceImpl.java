@@ -1,13 +1,21 @@
 package com.co.jarvis.service.impl;
 
+import com.co.jarvis.dto.BulkPresentationPriceUpdateRequest;
+import com.co.jarvis.dto.BulkPresentationPriceUpdateResponse;
+import com.co.jarvis.dto.BulkUpdateError;
 import com.co.jarvis.dto.DisplayStock;
 import com.co.jarvis.dto.PaginationDto;
+import com.co.jarvis.dto.PresentationPriceUpdate;
 import com.co.jarvis.dto.ProductDto;
+import com.co.jarvis.dto.UserDto;
+import com.co.jarvis.entity.AuditEntry;
 import com.co.jarvis.entity.Presentation;
 import com.co.jarvis.entity.Product;
+import com.co.jarvis.enums.EAuditAction;
 import com.co.jarvis.enums.ESale;
 import com.co.jarvis.repository.ProductRepository;
 import com.co.jarvis.service.ProductService;
+import com.co.jarvis.util.DateTimeUtil;
 import com.co.jarvis.util.UnitConverter;
 import com.co.jarvis.util.exception.DeleteRecordException;
 import com.co.jarvis.util.exception.DuplicateRecordException;
@@ -25,14 +33,19 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import static java.lang.String.format;
 
@@ -87,11 +100,173 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public void updatePriceByIds(BigDecimal price, List<String> ids) {
-        log.info("ProductServiceImpl -> updatePriceByIds");
-        List<Product> products = repository.findAllById(ids);
-        //products.forEach(product -> product..setPrice(price));
-        repository.saveAll(products);
+    public BulkPresentationPriceUpdateResponse bulkUpdatePresentationPrices(
+            BulkPresentationPriceUpdateRequest request, UserDto user) {
+        log.info("ProductServiceImpl -> bulkUpdatePresentationPrices: entries={}, user={}",
+                request != null && request.getUpdates() != null ? request.getUpdates().size() : 0,
+                user != null ? user.getNumberIdentity() : "unknown");
+
+        List<PresentationPriceUpdate> updates = request.getUpdates();
+        List<BulkUpdateError> errors = new ArrayList<>();
+        int[] updatedCount = {0};
+
+        // Agrupar por productId para procesar cada producto de forma atómica
+        Map<String, List<PresentationPriceUpdate>> grouped = updates.stream()
+                .collect(Collectors.groupingBy(PresentationPriceUpdate::getProductId,
+                        LinkedHashMap::new, Collectors.toList()));
+
+        for (Map.Entry<String, List<PresentationPriceUpdate>> entry : grouped.entrySet()) {
+            String productId = entry.getKey();
+            List<PresentationPriceUpdate> productUpdates = entry.getValue();
+            try {
+                int applied = applyUpdatesToProduct(productId, productUpdates, user, errors);
+                updatedCount[0] += applied;
+            } catch (RuntimeException ex) {
+                log.error("Error al actualizar producto {}: {}", productId, ex.getMessage(), ex);
+                for (PresentationPriceUpdate u : productUpdates) {
+                    errors.add(BulkUpdateError.builder()
+                            .productId(u.getProductId())
+                            .barcode(u.getBarcode())
+                            .message("Error al actualizar el producto: " + ex.getMessage())
+                            .build());
+                }
+            }
+        }
+
+        return BulkPresentationPriceUpdateResponse.builder()
+                .updated(updatedCount[0])
+                .failed(errors.size())
+                .errors(errors)
+                .build();
+    }
+
+    /**
+     * Aplica todas las actualizaciones de precios para un único producto de forma atómica.
+     * Si el producto no existe, cada entrada se marca con error (devuelve 0).
+     * Si una presentación no existe, solo esa entrada se marca con error; las demás se aplican.
+     */
+    @Transactional
+    protected int applyUpdatesToProduct(String productId,
+                                        List<PresentationPriceUpdate> productUpdates,
+                                        UserDto user,
+                                        List<BulkUpdateError> errors) {
+        Optional<Product> maybeProduct = repository.findById(productId);
+        if (maybeProduct.isEmpty()) {
+            for (PresentationPriceUpdate u : productUpdates) {
+                errors.add(BulkUpdateError.builder()
+                        .productId(u.getProductId())
+                        .barcode(u.getBarcode())
+                        .message("Producto no existe con ID: " + productId)
+                        .build());
+            }
+            return 0;
+        }
+
+        Product product = maybeProduct.get();
+        if (product.getPresentations() == null || product.getPresentations().isEmpty()) {
+            for (PresentationPriceUpdate u : productUpdates) {
+                errors.add(BulkUpdateError.builder()
+                        .productId(u.getProductId())
+                        .barcode(u.getBarcode())
+                        .message("El producto no tiene presentaciones registradas")
+                        .build());
+            }
+            return 0;
+        }
+
+        int appliedHere = 0;
+        for (PresentationPriceUpdate update : productUpdates) {
+            Optional<Presentation> maybePresentation = product.getPresentations().stream()
+                    .filter(p -> Objects.equals(p.getBarcode(), update.getBarcode()))
+                    .findFirst();
+
+            if (maybePresentation.isEmpty()) {
+                errors.add(BulkUpdateError.builder()
+                        .productId(update.getProductId())
+                        .barcode(update.getBarcode())
+                        .message("Barcode no existe en las presentaciones del producto")
+                        .build());
+                continue;
+            }
+
+            Presentation presentation = maybePresentation.get();
+            BigDecimal oldSalePrice = presentation.getSalePrice();
+            BigDecimal oldCostPrice = presentation.getCostPrice();
+
+            boolean changedSomething = false;
+
+            if (update.getSalePrice() != null
+                    && !Objects.equals(oldSalePrice, update.getSalePrice())) {
+                presentation.setSalePrice(update.getSalePrice());
+                appendAuditEntry(product, user, EAuditAction.ACTUALIZACION_PRECIO_VENTA,
+                        update.getBarcode(), "salePrice", oldSalePrice, update.getSalePrice());
+                changedSomething = true;
+            }
+            if (update.getCostPrice() != null
+                    && !Objects.equals(oldCostPrice, update.getCostPrice())) {
+                presentation.setCostPrice(update.getCostPrice());
+                appendAuditEntry(product, user, EAuditAction.ACTUALIZACION_PRECIO_COSTO,
+                        update.getBarcode(), "costPrice", oldCostPrice, update.getCostPrice());
+                changedSomething = true;
+            }
+
+            // Advertencia no bloqueante: precio de venta menor al costo
+            BigDecimal effectiveSale = presentation.getSalePrice();
+            BigDecimal effectiveCost = presentation.getCostPrice();
+            if (effectiveSale != null && effectiveCost != null
+                    && effectiveSale.compareTo(effectiveCost) < 0) {
+                log.warn("ADVERTENCIA: salePrice ({}) < costPrice ({}) en product={} barcode={}",
+                        effectiveSale, effectiveCost, productId, update.getBarcode());
+            }
+
+            logAuditEntry(productId, update.getBarcode(), oldSalePrice, update.getSalePrice(),
+                    oldCostPrice, update.getCostPrice(), user);
+            if (changedSomething) {
+                appliedHere++;
+            }
+        }
+
+        if (appliedHere > 0) {
+            repository.save(product);
+        }
+        return appliedHere;
+    }
+
+    private void appendAuditEntry(Product product, UserDto user, EAuditAction action,
+                                  String barcode, String fieldName,
+                                  BigDecimal oldValue, BigDecimal newValue) {
+        if (product.getAuditTrail() == null) {
+            product.setAuditTrail(new ArrayList<>());
+        }
+        AuditEntry entry = AuditEntry.builder()
+                .userId(user != null ? user.getNumberIdentity() : null)
+                .userName(user != null ? user.getFullName() : null)
+                .action(action)
+                .timestamp(DateTimeUtil.nowLocalDateTime())
+                .entityRef("presentation:" + barcode)
+                .fieldName(fieldName)
+                .oldValue(oldValue != null ? oldValue.toPlainString() : null)
+                .newValue(newValue != null ? newValue.toPlainString() : null)
+                .details(String.format("Actualización de %s en presentación %s: %s -> %s",
+                        fieldName, barcode,
+                        oldValue != null ? oldValue.toPlainString() : "null",
+                        newValue != null ? newValue.toPlainString() : "null"))
+                .build();
+        product.getAuditTrail().add(entry);
+    }
+
+    private void logAuditEntry(String productId, String barcode,
+                               BigDecimal oldSalePrice, BigDecimal newSalePrice,
+                               BigDecimal oldCostPrice, BigDecimal newCostPrice,
+                               UserDto user) {
+        String userId = user != null ? user.getNumberIdentity() : "unknown";
+        String userName = user != null ? user.getFullName() : "unknown";
+        log.info("AUDIT PRICE_UPDATE | user={} ({}) | product={} | barcode={} | " +
+                        "salePrice: {} -> {} | costPrice: {} -> {} | at={}",
+                userName, userId, productId, barcode,
+                oldSalePrice, newSalePrice != null ? newSalePrice : "(sin cambio)",
+                oldCostPrice, newCostPrice != null ? newCostPrice : "(sin cambio)",
+                Instant.now());
     }
 
     @Override

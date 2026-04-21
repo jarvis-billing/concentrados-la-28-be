@@ -1,11 +1,13 @@
 package com.co.jarvis.service;
 
 import java.math.BigDecimal;
-import java.util.List;
 
+import com.co.jarvis.dto.BulkPresentationPriceUpdateRequest;
+import com.co.jarvis.dto.BulkPresentationPriceUpdateResponse;
 import com.co.jarvis.dto.DisplayStock;
 import com.co.jarvis.dto.PaginationDto;
 import com.co.jarvis.dto.ProductDto;
+import com.co.jarvis.dto.UserDto;
 import com.co.jarvis.entity.Product;
 
 public interface ProductService extends BaseService<ProductDto> {
@@ -14,7 +16,13 @@ public interface ProductService extends BaseService<ProductDto> {
 
     PaginationDto<ProductDto> findAllPageSearch(int pageNumber, int pageSize, String search);
 
-    void updatePriceByIds(BigDecimal price, List<String> ids);
+    /**
+     * Actualiza en bloque los precios (venta y/o costo) de presentaciones específicas
+     * identificadas por productId + barcode. Cada producto se procesa de forma atómica;
+     * los errores son reportados parcialmente sin detener el resto del procesamiento.
+     */
+    BulkPresentationPriceUpdateResponse bulkUpdatePresentationPrices(
+            BulkPresentationPriceUpdateRequest request, UserDto user);
 
     ProductDto findByPresentationsBarcode(String barcode);
 

@@ -84,4 +84,16 @@ public class InternalTransfer {
 
     @Field("created_at")
     private LocalDateTime createdAt;
+
+    /**
+     * Efectivo que el sistema "creía" tener al momento del registro.
+     * Solo informativo — no se valida ni se muestra al usuario. Permite detectar
+     * desfases entre capturas en papel y movimientos reales (p.ej. una consignación
+     * mayor al saldo calculado evidencia ventas pendientes de capturar).
+     */
+    @Field("system_cash_snapshot")
+    private BigDecimal systemCashSnapshot;
+
+    @Field("snapshot_calculated_at")
+    private LocalDateTime snapshotCalculatedAt;
 }

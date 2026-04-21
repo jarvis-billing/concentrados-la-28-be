@@ -1,5 +1,6 @@
 package com.co.jarvis.dto;
 
+import com.co.jarvis.entity.AuditEntry;
 import com.co.jarvis.entity.Presentation;
 import com.co.jarvis.entity.Stock;
 import com.co.jarvis.enums.EVat;
@@ -30,5 +31,6 @@ public class ProductDto implements Serializable {
     private BigDecimal vatValue;
     private EVat vatType;
     private DisplayStock displayStock;
+    private List<AuditEntry> auditTrail;
 
 }
