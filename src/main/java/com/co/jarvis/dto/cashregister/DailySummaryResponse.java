@@ -18,7 +18,9 @@ public class DailySummaryResponse implements Serializable {
     private List<PaymentMethodSummaryDto> paymentMethodSummaries;
     private BigDecimal totalIncome;
     private BigDecimal totalExpense;
+    private BigDecimal openingBalance;
     private BigDecimal expectedCashAmount;
+    private BigDecimal expectedCashTotal;
     private BigDecimal expectedTransferAmount;
     private BigDecimal expectedOtherAmount;
 }

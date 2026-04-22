@@ -97,6 +97,10 @@ public class CashRegisterServiceImpl implements CashRegisterService {
 
         BigDecimal expectedCash = totalIncome.subtract(totalExpense);
 
+        // Resolver saldo de apertura: si hay arqueo para la fecha, usarlo; si no, usar el sugerido
+        BigDecimal openingBalance = resolveOpeningBalance(date);
+        BigDecimal expectedCashTotal = openingBalance.add(expectedCash);
+
         // Resumen por método de pago (solo EFECTIVO)
         List<PaymentMethodSummaryDto> paymentMethodSummaries = calculatePaymentMethodSummaries(transactions);
 
@@ -105,10 +109,28 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .paymentMethodSummaries(paymentMethodSummaries)
                 .totalIncome(totalIncome)
                 .totalExpense(totalExpense)
+                .openingBalance(openingBalance)
                 .expectedCashAmount(expectedCash)
+                .expectedCashTotal(expectedCashTotal)
                 .expectedTransferAmount(BigDecimal.ZERO)
                 .expectedOtherAmount(BigDecimal.ZERO)
                 .build();
+    }
+
+    private BigDecimal resolveOpeningBalance(LocalDate date) {
+        // 1) Si ya existe un arqueo para esta fecha, su openingBalance es la fuente de verdad
+        Optional<CashCountSession> existing = cashCountSessionRepository.findBySessionDate(date);
+        if (existing.isPresent() && existing.get().getOpeningBalance() != null) {
+            return existing.get().getOpeningBalance();
+        }
+
+        // 2) Si no, usar el efectivo contado del último arqueo cerrado (saldo sugerido)
+        List<CashCountSession> closedSessions = cashCountSessionRepository.findLastClosedSession();
+        if (!closedSessions.isEmpty() && closedSessions.get(0).getTotalCashCounted() != null) {
+            return closedSessions.get(0).getTotalCashCounted();
+        }
+
+        return BigDecimal.ZERO;
     }
 
     @Override
