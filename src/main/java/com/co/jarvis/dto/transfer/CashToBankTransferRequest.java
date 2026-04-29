@@ -25,12 +25,27 @@ public class CashToBankTransferRequest implements Serializable {
     private BigDecimal amount;
 
     /**
-     * Bank account number of destination (required).
+     * ID of an existing BankAccount entity (preferred).
+     * If provided, bankName / accountNumber / accountType are populated automatically.
+     * If null, the free-text fields below are used and a new BankAccount is created.
+     */
+    private String bankAccountId;
+
+    /**
+     * Human-readable alias for the account (only needed when creating a new one).
+     * e.g. "Bancolombia Ahorros Principal".
+     * Ignored when bankAccountId is provided.
+     */
+    private String accountName;
+
+    /**
+     * Bank account number of destination.
+     * Required when bankAccountId is null (used to create/find the account).
      */
     private String accountNumber;
 
     /**
-     * Optional descriptive fields for the bank account (stored for auditing).
+     * Optional descriptive fields (used when bankAccountId is null).
      */
     private String bankName;
     private EBankAccount accountType;

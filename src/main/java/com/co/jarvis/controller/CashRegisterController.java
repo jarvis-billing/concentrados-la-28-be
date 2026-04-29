@@ -131,6 +131,29 @@ public class CashRegisterController {
     }
 
     /**
+     * POST /api/cash-register/{id}/reopen
+     * Reabre un arqueo CERRADO. Guarda snapshot del estado previo al cierre.
+     */
+    @PostMapping(value = "/{id}/reopen", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> reopen(
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, String> body) {
+        log.info("CashRegisterController -> reopen: {}", id);
+        try {
+            String reason = body != null ? body.get("reason") : null;
+            UserDto user = getAuthenticatedUser();
+            CashCountSessionDto session = cashRegisterService.reopen(id, reason, user);
+            return ResponseEntity.ok(session);
+        } catch (RuntimeException e) {
+            log.error("Error reopening cash count: {}", e.getMessage());
+            if (e.getMessage().contains("no encontrado")) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
      * GET /api/cash-register?fromDate=2026-01-01&toDate=2026-02-07&status=CERRADO
      * Lista arqueos con filtros opcionales
      */

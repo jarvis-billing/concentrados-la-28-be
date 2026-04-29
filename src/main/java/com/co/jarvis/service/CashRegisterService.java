@@ -41,6 +41,11 @@ public interface CashRegisterService {
     CashCountSessionDto cancel(String id, CancelCashCountRequest request, UserDto user);
 
     /**
+     * Reabre un arqueo CERRADO. Guarda snapshot del estado previo al cierre.
+     */
+    CashCountSessionDto reopen(String id, String reason, UserDto user);
+
+    /**
      * Lista arqueos con filtros opcionales
      */
     List<CashCountSummaryDto> list(LocalDate fromDate, LocalDate toDate, ECashCountStatus status);

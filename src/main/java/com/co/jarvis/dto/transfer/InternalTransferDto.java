@@ -25,6 +25,8 @@ public class InternalTransferDto implements Serializable {
     private BigDecimal amount;
     private EInternalTransferType type;
     private String sourceId;
+    private String destinationBankAccountId;
+    private String destinationBankAccountName;
     private String destinationBankName;
     private String destinationAccountNumber;
     private EBankAccount destinationAccountType;

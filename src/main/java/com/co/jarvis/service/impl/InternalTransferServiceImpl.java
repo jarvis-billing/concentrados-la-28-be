@@ -3,9 +3,11 @@ package com.co.jarvis.service.impl;
 import com.co.jarvis.dto.UserDto;
 import com.co.jarvis.dto.transfer.CashToBankTransferRequest;
 import com.co.jarvis.dto.transfer.InternalTransferDto;
+import com.co.jarvis.entity.BankAccount;
 import com.co.jarvis.entity.InternalTransfer;
 import com.co.jarvis.enums.EInternalTransferStatus;
 import com.co.jarvis.enums.EInternalTransferType;
+import com.co.jarvis.repository.BankAccountRepository;
 import com.co.jarvis.repository.InternalTransferRepository;
 import com.co.jarvis.service.CashRegisterService;
 import com.co.jarvis.service.InternalTransferService;
@@ -31,6 +33,7 @@ public class InternalTransferServiceImpl implements InternalTransferService {
     private static final String DEFAULT_SOURCE_ID = "MAIN_CASH_REGISTER";
 
     private final InternalTransferRepository internalTransferRepository;
+    private final BankAccountRepository bankAccountRepository;
     private final CashRegisterService cashRegisterService;
 
     /**
@@ -66,15 +69,19 @@ public class InternalTransferServiceImpl implements InternalTransferService {
                     request.getAmount(), systemCashSnapshot, transferDate);
         }
 
+        BankAccount account = resolveOrCreateBankAccount(request);
+
         InternalTransfer transfer = InternalTransfer.builder()
                 .transferDate(transferDate)
                 .transferDateTime(DateTimeUtil.nowLocalDateTime())
                 .amount(request.getAmount())
                 .type(EInternalTransferType.TRASLADO_EFECTIVO_BANCO)
                 .sourceId(DEFAULT_SOURCE_ID)
-                .destinationBankName(request.getBankName())
-                .destinationAccountNumber(request.getAccountNumber())
-                .destinationAccountType(request.getAccountType())
+                .destinationBankAccountId(account != null ? account.getId() : null)
+                .destinationBankAccountName(account != null ? account.getName() : null)
+                .destinationBankName(account != null ? account.getBankName() : request.getBankName())
+                .destinationAccountNumber(account != null ? account.getAccountNumber() : request.getAccountNumber())
+                .destinationAccountType(account != null ? account.getAccountType() : request.getAccountType())
                 .responsibleUserId(user != null ? user.getNumberIdentity() : null)
                 .responsibleUserName(user != null ? user.getFullName() : null)
                 .reference(request.getReference())
@@ -169,6 +176,35 @@ public class InternalTransferServiceImpl implements InternalTransferService {
                 .collect(Collectors.toList());
     }
 
+    private BankAccount resolveOrCreateBankAccount(CashToBankTransferRequest request) {
+        if (request.getBankAccountId() != null && !request.getBankAccountId().isBlank()) {
+            return bankAccountRepository.findById(request.getBankAccountId())
+                    .orElseThrow(() -> new RuntimeException(
+                            "Cuenta bancaria no encontrada: " + request.getBankAccountId()));
+        }
+
+        if (request.getAccountNumber() != null && !request.getAccountNumber().isBlank()) {
+            return bankAccountRepository.findByAccountNumber(request.getAccountNumber())
+                    .orElseGet(() -> {
+                        log.info("Creando nueva cuenta bancaria: {}", request.getAccountNumber());
+                        BankAccount newAccount = BankAccount.builder()
+                                .name(request.getAccountName() != null
+                                        ? request.getAccountName()
+                                        : request.getBankName() + " " + request.getAccountNumber())
+                                .bankName(request.getBankName())
+                                .accountNumber(request.getAccountNumber())
+                                .accountType(request.getAccountType())
+                                .active(true)
+                                .createdAt(DateTimeUtil.nowLocalDateTime())
+                                .updatedAt(DateTimeUtil.nowLocalDateTime())
+                                .build();
+                        return bankAccountRepository.save(newAccount);
+                    });
+        }
+
+        return null;
+    }
+
     private void validateCashToBankRequest(CashToBankTransferRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("La solicitud de traslado no puede ser nula");
@@ -196,6 +232,8 @@ public class InternalTransferServiceImpl implements InternalTransferService {
                 .amount(t.getAmount())
                 .type(t.getType())
                 .sourceId(t.getSourceId())
+                .destinationBankAccountId(t.getDestinationBankAccountId())
+                .destinationBankAccountName(t.getDestinationBankAccountName())
                 .destinationBankName(t.getDestinationBankName())
                 .destinationAccountNumber(t.getDestinationAccountNumber())
                 .destinationAccountType(t.getDestinationAccountType())
@@ -207,6 +245,8 @@ public class InternalTransferServiceImpl implements InternalTransferService {
                 .cancelledAt(t.getCancelledAt())
                 .cancelReason(t.getCancelReason())
                 .createdAt(t.getCreatedAt())
+                .supportFileName(t.getSupportFileName())
+                .supportFileUrl(t.getSupportFileUrl())
                 .build();
     }
 

@@ -54,4 +54,7 @@ public class CashCountSession {
 
     @Builder.Default
     private List<AuditEntry> auditTrail = new ArrayList<>();  // Historial de operaciones
+
+    @Builder.Default
+    private List<SessionSnapshot> snapshots = new ArrayList<>();  // Fotos previas a reaperturas
 }

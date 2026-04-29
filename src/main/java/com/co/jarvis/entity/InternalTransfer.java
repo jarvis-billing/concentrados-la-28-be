@@ -51,6 +51,9 @@ public class InternalTransfer {
     @Field("destination_bank_account_id")
     private String destinationBankAccountId;
 
+    @Field("destination_bank_account_name")
+    private String destinationBankAccountName;
+
     @Field("destination_bank_name")
     private String destinationBankName;
 

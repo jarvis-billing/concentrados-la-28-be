@@ -289,6 +289,46 @@ public class CashRegisterServiceImpl implements CashRegisterService {
 
     @Override
     @Transactional
+    public CashCountSessionDto reopen(String id, String reason, UserDto user) {
+        log.info("CashRegisterServiceImpl -> reopen: {}, user={}", id,
+                user != null ? user.getNumberIdentity() : "unknown");
+
+        CashCountSession session = cashCountSessionRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Arqueo no encontrado"));
+
+        if (session.getStatus() != ECashCountStatus.CERRADO) {
+            throw new RuntimeException("Solo se pueden reabrir arqueos cerrados");
+        }
+
+        SessionSnapshot snapshot = SessionSnapshot.builder()
+                .snapshotAt(LocalDateTime.now())
+                .userId(user != null ? user.getNumberIdentity() : null)
+                .userName(user != null ? user.getFullName() : null)
+                .totalCounted(session.getTotalCashCounted())
+                .expectedTotal(session.getExpectedCashTotal())
+                .difference(session.getCashDifference())
+                .reason(reason)
+                .build();
+
+        if (session.getSnapshots() == null) session.setSnapshots(new ArrayList<>());
+        session.getSnapshots().add(snapshot);
+
+        session.setStatus(ECashCountStatus.EN_PROGRESO);
+        ensureAuditTrail(session).add(AuditEntry.builder()
+                .userId(user != null ? user.getNumberIdentity() : null)
+                .userName(user != null ? user.getFullName() : null)
+                .action(EAuditAction.REAPERTURA)
+                .timestamp(LocalDateTime.now())
+                .details(reason)
+                .build());
+
+        session = cashCountSessionRepository.save(session);
+        log.info("Cash count session reopened: {}", id);
+        return mapToDto(session);
+    }
+
+    @Override
+    @Transactional
     public CashCountSessionDto cancel(String id, CancelCashCountRequest request, UserDto user) {
         log.info("CashRegisterServiceImpl -> cancel: {}, user={}", id,
                 user != null ? user.getNumberIdentity() : "unknown");
@@ -774,6 +814,19 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                                 .build())
                         .collect(Collectors.toList()) : new ArrayList<>();
 
+        List<SessionSnapshotDto> snapshotDtos = session.getSnapshots() != null ?
+                session.getSnapshots().stream()
+                        .map(s -> SessionSnapshotDto.builder()
+                                .snapshotAt(s.getSnapshotAt())
+                                .userId(s.getUserId())
+                                .userName(s.getUserName())
+                                .totalCounted(s.getTotalCounted())
+                                .expectedTotal(s.getExpectedTotal())
+                                .difference(s.getDifference())
+                                .reason(s.getReason())
+                                .build())
+                        .collect(Collectors.toList()) : new ArrayList<>();
+
         return CashCountSessionDto.builder()
                 .id(session.getId())
                 .sessionDate(session.getSessionDate())
@@ -792,6 +845,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .notes(session.getNotes())
                 .cancelReason(session.getCancelReason())
                 .auditTrail(auditDtos)
+                .snapshots(snapshotDtos)
                 .build();
     }
 

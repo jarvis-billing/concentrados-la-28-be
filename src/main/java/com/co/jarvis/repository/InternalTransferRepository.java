@@ -16,6 +16,9 @@ public interface InternalTransferRepository extends MongoRepository<InternalTran
 
     List<InternalTransfer> findByTransferDateAndStatus(LocalDate transferDate, EInternalTransferStatus status);
 
+    List<InternalTransfer> findByTransferDateAndStatusAndDestinationBankAccountId(
+            LocalDate transferDate, EInternalTransferStatus status, String destinationBankAccountId);
+
     List<InternalTransfer> findByTransferDateAndTypeAndStatus(
             LocalDate transferDate, EInternalTransferType type, EInternalTransferStatus status);
 

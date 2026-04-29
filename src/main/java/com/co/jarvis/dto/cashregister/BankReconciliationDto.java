@@ -15,20 +15,21 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CashCountSessionDto implements Serializable {
+public class BankReconciliationDto implements Serializable {
+
     private String id;
     private LocalDate sessionDate;
+    private String bankAccountId;
+    private String bankAccountName;
     private BigDecimal openingBalance;
-    private List<CashDenominationDto> cashDenominations;
-    private BigDecimal totalCashCounted;
-    private BigDecimal expectedCashAmount;
-    private BigDecimal expectedCashTotal;
-    private BigDecimal expectedTransferAmount;
-    private BigDecimal expectedOtherAmount;
-    private BigDecimal cashDifference;
+    private BigDecimal totalBankCounted;
+    private BigDecimal expectedBankAmount;
+    private BigDecimal expectedBankTotal;
+    private BigDecimal difference;
     private BigDecimal totalIncome;
     private BigDecimal totalExpense;
-    private BigDecimal netCashFlow;
+    private BigDecimal totalTransfers;
+    private BigDecimal netBankFlow;
     private ECashCountStatus status;
     private String notes;
     private String cancelReason;
