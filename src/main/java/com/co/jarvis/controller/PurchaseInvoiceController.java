@@ -1,8 +1,10 @@
 package com.co.jarvis.controller;
 
 import com.co.jarvis.dto.AddItemsRequest;
+import com.co.jarvis.dto.CostHistoryEntry;
 import com.co.jarvis.dto.PurchaseFilterDto;
 import com.co.jarvis.dto.PurchaseInvoiceDto;
+import com.co.jarvis.dto.PurchaseLastCostInfo;
 import com.co.jarvis.dto.SupplierRefDto;
 import com.co.jarvis.service.PurchaseInvoiceService;
 import jakarta.validation.Valid;
@@ -14,6 +16,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 
 @RestController
@@ -145,5 +149,55 @@ public class PurchaseInvoiceController {
         
         PurchaseInvoiceDto updatedInvoice = service.addItems(id, request.getItems());
         return ResponseEntity.ok(updatedInvoice);
+    }
+
+    /**
+     * GET /api/purchases/invoices/last-cost?presentationId=770123456789
+     * Devuelve el costo de la última compra registrada para una presentación dada.
+     */
+    @GetMapping("/last-cost")
+    public ResponseEntity<PurchaseLastCostInfo> getLastCost(
+            @RequestParam String presentationId) {
+        logger.info("PurchaseInvoiceController -> getLastCost: presentationId={}", presentationId);
+
+        PurchaseLastCostInfo info = service.getLastCost(presentationId);
+        if (info == null) {
+            return ResponseEntity.ok().body(null);
+        }
+        return ResponseEntity.ok(info);
+    }
+
+    /**
+     * GET /api/purchases/invoices/cost-history?presentationId=770123456789&fromDate=2025-01-01&toDate=2025-12-31
+     * Devuelve el historial completo de compras de una presentación.
+     */
+    @GetMapping("/cost-history")
+    public ResponseEntity<List<CostHistoryEntry>> getCostHistory(
+            @RequestParam String presentationId,
+            @RequestParam(required = false) String fromDate,
+            @RequestParam(required = false) String toDate) {
+        logger.info("PurchaseInvoiceController -> getCostHistory: presentationId={}, fromDate={}, toDate={}",
+                presentationId, fromDate, toDate);
+
+        LocalDate from = null;
+        LocalDate to = null;
+
+        if (fromDate != null && !fromDate.isBlank()) {
+            try {
+                from = LocalDate.parse(fromDate);
+            } catch (DateTimeParseException e) {
+                logger.warn("Invalid fromDate format: {}", fromDate);
+            }
+        }
+        if (toDate != null && !toDate.isBlank()) {
+            try {
+                to = LocalDate.parse(toDate);
+            } catch (DateTimeParseException e) {
+                logger.warn("Invalid toDate format: {}", toDate);
+            }
+        }
+
+        List<CostHistoryEntry> history = service.getCostHistory(presentationId, from, to);
+        return ResponseEntity.ok(history);
     }
 }

@@ -1,8 +1,10 @@
 package com.co.jarvis.service.impl;
 
 import com.co.jarvis.dto.PurchaseFilterDto;
+import com.co.jarvis.dto.CostHistoryEntry;
 import com.co.jarvis.dto.PurchaseInvoiceDto;
 import com.co.jarvis.dto.PurchaseInvoiceItemDto;
+import com.co.jarvis.dto.PurchaseLastCostInfo;
 import com.co.jarvis.entity.Presentation;
 import com.co.jarvis.entity.Product;
 import com.co.jarvis.entity.PurchaseInvoice;
@@ -20,11 +22,15 @@ import com.co.jarvis.util.mensajes.MessageConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -98,7 +104,10 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
 
             // Mapear DTO a entidad
             PurchaseInvoice invoice = mapper.mapToEntity(dto);
-            
+
+            // Calcular unitTotalCost para cada item
+            calculateUnitTotalCostForItems(invoice.getItems());
+
             // Configurar valores por defecto
             invoice.setStatus(EPurchaseInvoiceStatus.CREATED);
             invoice.setCreatedAt(OffsetDateTime.now());
@@ -144,6 +153,10 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
 
             // Mapear DTO a entidad
             PurchaseInvoice updatedInvoice = mapper.mapToEntity(dto);
+
+            // Calcular unitTotalCost para cada item
+            calculateUnitTotalCostForItems(updatedInvoice.getItems());
+
             updatedInvoice.setId(id);
             updatedInvoice.setCreatedAt(originalInvoice.getCreatedAt());
             updatedInvoice.setUpdatedAt(OffsetDateTime.now());
@@ -213,6 +226,11 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             List<PurchaseInvoiceItem> newItemEntities = newItems.stream()
                 .map(itemMapper::mapToEntity)
                 .collect(Collectors.toList());
+
+            // Calcular unitTotalCost para cada nuevo item
+            for (PurchaseInvoiceItem item : newItemEntities) {
+                item.setUnitTotalCost(calculateUnitTotalCost(item));
+            }
 
             // Agregar nuevos items al array de items existente
             invoice.getItems().addAll(newItemEntities);
@@ -562,6 +580,137 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
                 .orElse(null);
         }
         return null;
+    }
+
+    /**
+     * Calcula unitTotalCost para un item:
+     * unitCost + (vatAmount / quantity) + (freightAmount / quantity).
+     * Si quantity == 0 o null, las divisiones devuelven 0.
+     */
+    private BigDecimal calculateUnitTotalCost(PurchaseInvoiceItem item) {
+        if (item == null) return BigDecimal.ZERO;
+
+        BigDecimal unitCost = item.getUnitCost() != null ? item.getUnitCost() : BigDecimal.ZERO;
+
+        if (item.getQuantity() == null || item.getQuantity().compareTo(BigDecimal.ZERO) == 0) {
+            return unitCost;
+        }
+
+        BigDecimal vatPerUnit = item.getVatAmount() != null
+            ? item.getVatAmount().divide(item.getQuantity(), 2, RoundingMode.HALF_UP)
+            : BigDecimal.ZERO;
+
+        BigDecimal freightPerUnit = item.getFreightAmount() != null
+            ? item.getFreightAmount().divide(item.getQuantity(), 2, RoundingMode.HALF_UP)
+            : BigDecimal.ZERO;
+
+        return unitCost.add(vatPerUnit).add(freightPerUnit);
+    }
+
+    /**
+     * Calcula unitTotalCost para cada item de una lista.
+     */
+    private void calculateUnitTotalCostForItems(List<PurchaseInvoiceItem> items) {
+        if (items == null || items.isEmpty()) return;
+        for (PurchaseInvoiceItem item : items) {
+            item.setUnitTotalCost(calculateUnitTotalCost(item));
+        }
+    }
+
+    @Override
+    public PurchaseLastCostInfo getLastCost(String presentationId) {
+        log.info("PurchaseInvoiceServiceImpl -> getLastCost: presentationId={}", presentationId);
+
+        Sort sort = Sort.by(Sort.Direction.DESC, "invoiceDate", "createdAt");
+        List<PurchaseInvoice> invoices = purchaseInvoiceRepository
+                .findByItemPresentationBarcodeWithCost(presentationId, sort);
+
+        for (PurchaseInvoice invoice : invoices) {
+            for (PurchaseInvoiceItem item : invoice.getItems()) {
+                if (presentationId.equals(item.getPresentationBarcode())
+                        && item.getUnitTotalCost() != null) {
+
+                    BigDecimal vatPerUnit = item.getVatAmount() != null
+                            && item.getQuantity() != null
+                            && item.getQuantity().compareTo(BigDecimal.ZERO) > 0
+                        ? item.getVatAmount().divide(item.getQuantity(), 2, RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+
+                    BigDecimal freightPerUnit = item.getFreightAmount() != null
+                            && item.getQuantity() != null
+                            && item.getQuantity().compareTo(BigDecimal.ZERO) > 0
+                        ? item.getFreightAmount().divide(item.getQuantity(), 2, RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+
+                    return PurchaseLastCostInfo.builder()
+                            .presentationId(presentationId)
+                            .presentationBarcode(item.getPresentationBarcode())
+                            .productDescription(item.getDescription())
+                            .lastUnitCost(item.getUnitCost())
+                            .lastVatRate(item.getVatRate())
+                            .lastVatPerUnit(vatPerUnit)
+                            .lastFreightPerUnit(freightPerUnit)
+                            .lastUnitTotalCost(item.getUnitTotalCost())
+                            .lastInvoiceId(invoice.getId())
+                            .lastInvoiceNumber(invoice.getInvoiceNumber())
+                            .lastInvoiceDate(invoice.getInvoiceDate())
+                            .lastSupplierId(invoice.getSupplier() != null ? invoice.getSupplier().getId() : null)
+                            .lastSupplierName(invoice.getSupplier() != null ? invoice.getSupplier().getName() : null)
+                            .build();
+                }
+            }
+        }
+        log.info("getLastCost -> No se encontró historial de costo para presentationId={}", presentationId);
+        return null;
+    }
+
+    @Override
+    public List<CostHistoryEntry> getCostHistory(String presentationId, LocalDate fromDate, LocalDate toDate) {
+        log.info("PurchaseInvoiceServiceImpl -> getCostHistory: presentationId={}, fromDate={}, toDate={}",
+                presentationId, fromDate, toDate);
+
+        Sort sort = Sort.by(Sort.Direction.DESC, "invoiceDate", "createdAt");
+        List<PurchaseInvoice> invoices = purchaseInvoiceRepository
+                .findByItemPresentationBarcodeWithCost(presentationId, sort);
+
+        List<CostHistoryEntry> result = new ArrayList<>();
+
+        for (PurchaseInvoice invoice : invoices) {
+            // Filtro por fecha
+            if (fromDate != null && invoice.getInvoiceDate() != null
+                    && invoice.getInvoiceDate().isBefore(fromDate)) {
+                continue;
+            }
+            if (toDate != null && invoice.getInvoiceDate() != null
+                    && invoice.getInvoiceDate().isAfter(toDate)) {
+                continue;
+            }
+
+            for (PurchaseInvoiceItem item : invoice.getItems()) {
+                if (presentationId.equals(item.getPresentationBarcode())
+                        && item.getUnitTotalCost() != null) {
+                    result.add(CostHistoryEntry.builder()
+                            .invoiceId(invoice.getId())
+                            .invoiceNumber(invoice.getInvoiceNumber())
+                            .invoiceDate(invoice.getInvoiceDate())
+                            .createdAt(invoice.getCreatedAt())
+                            .supplierId(invoice.getSupplier() != null ? invoice.getSupplier().getId() : null)
+                            .supplierName(invoice.getSupplier() != null ? invoice.getSupplier().getName() : null)
+                            .presentationId(presentationId)
+                            .presentationBarcode(item.getPresentationBarcode())
+                            .productDescription(item.getDescription())
+                            .quantity(item.getQuantity())
+                            .unitCost(item.getUnitCost())
+                            .vatRate(item.getVatRate())
+                            .vatAmount(item.getVatAmount())
+                            .freightAmount(item.getFreightAmount())
+                            .unitTotalCost(item.getUnitTotalCost())
+                            .build());
+                }
+            }
+        }
+        log.info("getCostHistory -> {} entradas encontradas para presentationId={}", result.size(), presentationId);
+        return result;
     }
 
     /**

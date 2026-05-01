@@ -29,4 +29,6 @@ public class PurchaseInvoiceItem {
     private BigDecimal totalWeightKg = BigDecimal.ZERO;
     @Builder.Default
     private BigDecimal freightAmount = BigDecimal.ZERO;
+
+    private BigDecimal unitTotalCost;
 }

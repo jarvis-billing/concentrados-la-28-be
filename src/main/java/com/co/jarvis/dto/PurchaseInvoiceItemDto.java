@@ -25,4 +25,5 @@ public class PurchaseInvoiceItemDto implements Serializable {
     private Boolean applyFreight;
     private BigDecimal totalWeightKg;
     private BigDecimal freightAmount;
+    private BigDecimal unitTotalCost;
 }
