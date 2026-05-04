@@ -24,6 +24,8 @@ public class CashTransactionDto implements Serializable {
     private BigDecimal amount;
     private EPaymentMethod paymentMethod;
     private String reference;
+    private String bankAccountId;
+    private String bankAccountName;
     private LocalDateTime transactionDate;
     private String relatedDocumentId;
 }

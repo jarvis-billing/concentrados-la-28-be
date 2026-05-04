@@ -17,6 +17,8 @@ public class RegisterPaymentRequest {
     private String clientAccountId;
     private BigDecimal amount;
     private EPaymentMethod paymentMethod;
+    private String bankAccountId;
+    private String bankAccountName;
     private String reference;
     private String notes;
 }

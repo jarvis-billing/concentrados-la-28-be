@@ -18,6 +18,8 @@ public class AccountPayment {
     private String id;
     private BigDecimal amount;
     private EPaymentMethod paymentMethod;
+    private String bankAccountId;
+    private String bankAccountName;
     private String reference;
     private String notes;
     private LocalDateTime paymentDate;

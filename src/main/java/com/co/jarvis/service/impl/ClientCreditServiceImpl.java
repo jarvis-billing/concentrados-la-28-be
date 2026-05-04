@@ -14,6 +14,7 @@ import com.co.jarvis.enums.ECreditTransactionType;
 import com.co.jarvis.repository.ClientCreditRepository;
 import com.co.jarvis.repository.ClientRepository;
 import com.co.jarvis.service.ClientCreditService;
+import com.co.jarvis.util.BankAccountHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -39,6 +40,7 @@ public class ClientCreditServiceImpl implements ClientCreditService {
     private final ClientCreditRepository clientCreditRepository;
     private final ClientRepository clientRepository;
     private final MongoTemplate mongoTemplate;
+    private final BankAccountHelper bankAccountHelper;
 
     @Override
     public ClientCredit getByClientId(String clientId) {
@@ -78,6 +80,11 @@ public class ClientCreditServiceImpl implements ClientCreditService {
             throw new RuntimeException("El monto del depósito debe ser mayor a cero");
         }
 
+        // Validar y enriquecer info bancaria si es transferencia
+        bankAccountHelper.requireBankAccountForTransfer(request.getPaymentMethod(), request.getBankAccountId());
+        String bankAccountName = bankAccountHelper.resolveBankAccountName(
+                request.getBankAccountId(), request.getBankAccountName());
+
         ClientCredit credit = clientCreditRepository.findByClientId(request.getClientId())
                 .orElseGet(() -> createNewCredit(request.getClientId()));
 
@@ -89,6 +96,8 @@ public class ClientCreditServiceImpl implements ClientCreditService {
                 .amount(request.getAmount())
                 .balanceAfter(newBalance)
                 .paymentMethod(request.getPaymentMethod())
+                .bankAccountId(request.getBankAccountId())
+                .bankAccountName(bankAccountName)
                 .reference(request.getReference())
                 .notes(request.getNotes())
                 .transactionDate(LocalDateTime.now())
@@ -388,6 +397,11 @@ public class ClientCreditServiceImpl implements ClientCreditService {
             throw new RuntimeException("INVALID_PAYMENT_METHOD: Método de pago no válido");
         }
 
+        // Validar y enriquecer info bancaria si es transferencia
+        bankAccountHelper.requireBankAccountForTransfer(request.getPaymentMethod(), request.getBankAccountId());
+        String bankAccountName = bankAccountHelper.resolveBankAccountName(
+                request.getBankAccountId(), request.getBankAccountName());
+
         // Buscar el crédito del cliente
         ClientCredit credit = clientCreditRepository.findByClientId(request.getClientId())
                 .orElseThrow(() -> new RuntimeException("CLIENT_CREDIT_NOT_FOUND: El cliente no tiene registro de saldo a favor"));
@@ -407,6 +421,8 @@ public class ClientCreditServiceImpl implements ClientCreditService {
                 .amount(request.getAmount())
                 .balanceAfter(newBalance)
                 .paymentMethod(request.getPaymentMethod())
+                .bankAccountId(request.getBankAccountId())
+                .bankAccountName(bankAccountName)
                 .reference(request.getReference())
                 .notes(request.getNotes())
                 .transactionDate(LocalDateTime.now())

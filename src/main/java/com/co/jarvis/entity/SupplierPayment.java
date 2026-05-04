@@ -26,6 +26,8 @@ public class SupplierPayment {
     private EPaymentMethod method;
     private String reference;
     private String notes;
+    private String bankAccountId;
+    private String bankAccountName;
     private String supportUrl; // API URL to download support
     private String supportPath; // local filesystem path
 }

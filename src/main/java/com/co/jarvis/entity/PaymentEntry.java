@@ -15,4 +15,6 @@ public class PaymentEntry {
     private String method;      // EPaymentMethod as String value
     private BigDecimal amount;  // decimal(18,2)
     private String reference;   // optional
+    private String bankAccountId;
+    private String bankAccountName;
 }

@@ -105,8 +105,8 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             // Mapear DTO a entidad
             PurchaseInvoice invoice = mapper.mapToEntity(dto);
 
-            // Calcular unitTotalCost para cada item
-            calculateUnitTotalCostForItems(invoice.getItems());
+            // Calcular vatAmount, distribuir flete y calcular unitTotalCost para cada item
+            calculateItemCosts(invoice);
 
             // Configurar valores por defecto
             invoice.setStatus(EPurchaseInvoiceStatus.CREATED);
@@ -154,8 +154,8 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             // Mapear DTO a entidad
             PurchaseInvoice updatedInvoice = mapper.mapToEntity(dto);
 
-            // Calcular unitTotalCost para cada item
-            calculateUnitTotalCostForItems(updatedInvoice.getItems());
+            // Calcular vatAmount, distribuir flete y calcular unitTotalCost para cada item
+            calculateItemCosts(updatedInvoice);
 
             updatedInvoice.setId(id);
             updatedInvoice.setCreatedAt(originalInvoice.getCreatedAt());
@@ -227,13 +227,11 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
                 .map(itemMapper::mapToEntity)
                 .collect(Collectors.toList());
 
-            // Calcular unitTotalCost para cada nuevo item
-            for (PurchaseInvoiceItem item : newItemEntities) {
-                item.setUnitTotalCost(calculateUnitTotalCost(item));
-            }
-
             // Agregar nuevos items al array de items existente
             invoice.getItems().addAll(newItemEntities);
+
+            // Recalcular vatAmount, distribuir flete y calcular unitTotalCost para TODOS los items
+            calculateItemCosts(invoice);
 
             // Recalcular totales de la factura
             recalculateInvoiceTotals(invoice);
@@ -583,37 +581,78 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
     }
 
     /**
-     * Calcula unitTotalCost para un item:
-     * unitCost + (vatAmount / quantity) + (freightAmount / quantity).
+     * Calcula para cada item de la factura:
+     * 1. vatAmount = unitCost * quantity * vatRate / 100
+     * 2. freightAmount = freightRate distribuido proporcionalmente por totalWeightKg
+     *                    entre items con applyFreight=true
+     * 3. unitTotalCost = unitCost + (vatAmount / quantity) + (freightAmount / quantity)
+     *
      * Si quantity == 0 o null, las divisiones devuelven 0.
+     * Si no hay items con applyFreight=true, freightAmount = 0 para todos.
      */
-    private BigDecimal calculateUnitTotalCost(PurchaseInvoiceItem item) {
-        if (item == null) return BigDecimal.ZERO;
+    private void calculateItemCosts(PurchaseInvoice invoice) {
+        List<PurchaseInvoiceItem> items = invoice.getItems();
+        if (items == null || items.isEmpty()) return;
 
-        BigDecimal unitCost = item.getUnitCost() != null ? item.getUnitCost() : BigDecimal.ZERO;
+        BigDecimal freightRate = invoice.getFreightRate() != null ? invoice.getFreightRate() : BigDecimal.ZERO;
 
-        if (item.getQuantity() == null || item.getQuantity().compareTo(BigDecimal.ZERO) == 0) {
-            return unitCost;
+        // 1. Calcular vatAmount para cada item
+        for (PurchaseInvoiceItem item : items) {
+            BigDecimal unitCost = item.getUnitCost() != null ? item.getUnitCost() : BigDecimal.ZERO;
+            BigDecimal quantity = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
+            BigDecimal vatRate = item.getVatRate() != null ? item.getVatRate() : BigDecimal.ZERO;
+
+            BigDecimal vatAmount = unitCost
+                .multiply(quantity)
+                .multiply(vatRate)
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            item.setVatAmount(vatAmount);
         }
 
-        BigDecimal vatPerUnit = item.getVatAmount() != null
-            ? item.getVatAmount().divide(item.getQuantity(), 2, RoundingMode.HALF_UP)
-            : BigDecimal.ZERO;
+        // 2. Calcular peso total de items con applyFreight=true
+        BigDecimal totalWeight = items.stream()
+            .filter(item -> Boolean.TRUE.equals(item.getApplyFreight()))
+            .map(item -> item.getTotalWeightKg() != null ? item.getTotalWeightKg() : BigDecimal.ZERO)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal freightPerUnit = item.getFreightAmount() != null
-            ? item.getFreightAmount().divide(item.getQuantity(), 2, RoundingMode.HALF_UP)
-            : BigDecimal.ZERO;
+        // 3. Distribuir freightRate proporcionalmente por peso
+        if (totalWeight.compareTo(BigDecimal.ZERO) > 0 && freightRate.compareTo(BigDecimal.ZERO) > 0) {
+            for (PurchaseInvoiceItem item : items) {
+                if (Boolean.TRUE.equals(item.getApplyFreight())) {
+                    BigDecimal itemWeight = item.getTotalWeightKg() != null ? item.getTotalWeightKg() : BigDecimal.ZERO;
+                    BigDecimal freightAmount = freightRate
+                        .multiply(itemWeight)
+                        .divide(totalWeight, 2, RoundingMode.HALF_UP);
+                    item.setFreightAmount(freightAmount);
+                } else {
+                    item.setFreightAmount(BigDecimal.ZERO);
+                }
+            }
+        } else {
+            for (PurchaseInvoiceItem item : items) {
+                item.setFreightAmount(BigDecimal.ZERO);
+            }
+        }
 
-        return unitCost.add(vatPerUnit).add(freightPerUnit);
-    }
-
-    /**
-     * Calcula unitTotalCost para cada item de una lista.
-     */
-    private void calculateUnitTotalCostForItems(List<PurchaseInvoiceItem> items) {
-        if (items == null || items.isEmpty()) return;
+        // 4. Calcular unitTotalCost para cada item
         for (PurchaseInvoiceItem item : items) {
-            item.setUnitTotalCost(calculateUnitTotalCost(item));
+            BigDecimal unitCost = item.getUnitCost() != null ? item.getUnitCost() : BigDecimal.ZERO;
+            BigDecimal quantity = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
+
+            if (quantity.compareTo(BigDecimal.ZERO) == 0) {
+                item.setUnitTotalCost(unitCost);
+                continue;
+            }
+
+            BigDecimal vatPerUnit = item.getVatAmount() != null
+                ? item.getVatAmount().divide(quantity, 2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+            BigDecimal freightPerUnit = item.getFreightAmount() != null
+                ? item.getFreightAmount().divide(quantity, 2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+            item.setUnitTotalCost(unitCost.add(vatPerUnit).add(freightPerUnit));
         }
     }
 

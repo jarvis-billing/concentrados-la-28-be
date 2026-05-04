@@ -17,6 +17,8 @@ public class DepositCreditRequest {
     private String clientId;
     private BigDecimal amount;
     private EPaymentMethod paymentMethod;
+    private String bankAccountId;
+    private String bankAccountName;
     private String reference;
     private String notes;
 }

@@ -21,6 +21,8 @@ public class CreditTransaction {
     private BigDecimal amount;
     private BigDecimal balanceAfter;
     private EPaymentMethod paymentMethod;
+    private String bankAccountId;
+    private String bankAccountName;
     private String reference;
     private String billingId;
     private String notes;

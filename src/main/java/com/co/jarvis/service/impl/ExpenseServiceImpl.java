@@ -5,6 +5,7 @@ import com.co.jarvis.dto.ExpensePageDto;
 import com.co.jarvis.entity.Expense;
 import com.co.jarvis.repository.ExpenseRepository;
 import com.co.jarvis.service.ExpenseService;
+import com.co.jarvis.util.BankAccountHelper;
 import com.co.jarvis.util.exception.FieldsException;
 import com.co.jarvis.util.exception.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +37,9 @@ public class ExpenseServiceImpl implements ExpenseService {
     @Autowired
     private MongoTemplate mongoTemplate;
 
+    @Autowired
+    private BankAccountHelper bankAccountHelper;
+
     @Override
     public ExpenseDto create(ExpenseDto dto) {
         validate(dto);
@@ -45,6 +49,10 @@ public class ExpenseServiceImpl implements ExpenseService {
             // Set now in Bogota with -05:00 offset
             dateTime = OffsetDateTime.now(BOGOTA);
         }
+
+        // Enriquecer nombre de cuenta bancaria si solo viene el ID
+        dto.setBankAccountName(bankAccountHelper.resolveBankAccountName(
+                dto.getBankAccountId(), dto.getBankAccountName()));
 
         Expense entity = toEntity(dto);
         entity.setId(null);
@@ -70,6 +78,9 @@ public class ExpenseServiceImpl implements ExpenseService {
         existing.setDescription(dto.getDescription());
         existing.setReference(dto.getReference());
         existing.setSource(dto.getSource());
+        existing.setBankAccountId(dto.getBankAccountId());
+        existing.setBankAccountName(bankAccountHelper.resolveBankAccountName(
+                dto.getBankAccountId(), dto.getBankAccountName()));
         if (dto.getCreatedBy() != null && !dto.getCreatedBy().isBlank()) {
             existing.setCreatedBy(dto.getCreatedBy());
         }
@@ -149,6 +160,8 @@ public class ExpenseServiceImpl implements ExpenseService {
         }
         if (dto.getPaymentMethod() == null) {
             errors.put("paymentMethod", "Requerido");
+        } else {
+            bankAccountHelper.validateTransfer(dto.getPaymentMethod(), dto.getBankAccountId(), errors, "bankAccountId");
         }
         if (!StringUtils.hasText(dto.getCategory())) {
             errors.put("category", "Requerido");
@@ -188,6 +201,8 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .reference(e.getReference())
                 .source(e.getSource())
                 .createdBy(e.getCreatedBy())
+                .bankAccountId(e.getBankAccountId())
+                .bankAccountName(e.getBankAccountName())
                 .build();
     }
 
@@ -202,6 +217,8 @@ public class ExpenseServiceImpl implements ExpenseService {
                 .reference(d.getReference())
                 .source(d.getSource())
                 .createdBy(d.getCreatedBy())
+                .bankAccountId(d.getBankAccountId())
+                .bankAccountName(d.getBankAccountName())
                 .build();
     }
 }

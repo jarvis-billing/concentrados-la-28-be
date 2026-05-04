@@ -3,6 +3,7 @@ package com.co.jarvis.service.impl;
 import com.co.jarvis.dto.SupplierPaymentDto;
 import com.co.jarvis.entity.SupplierPayment;
 import com.co.jarvis.enums.EPaymentMethod;
+import com.co.jarvis.repository.BankAccountRepository;
 import com.co.jarvis.repository.SupplierPaymentRepository;
 import com.co.jarvis.service.SupplierPaymentService;
 import com.co.jarvis.util.exception.FieldsException;
@@ -33,6 +34,9 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
     @Autowired
     private SupplierPaymentRepository repository;
 
+    @Autowired
+    private BankAccountRepository bankAccountRepository;
+
     private final GenericMapper<SupplierPayment, SupplierPaymentDto> mapper =
             new GenericMapper<>(SupplierPayment.class, SupplierPaymentDto.class);
 
@@ -42,6 +46,12 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
 
         SupplierPayment entity = mapper.mapToEntity(dto);
         entity.setId(UUID.randomUUID().toString());
+
+        // Enriquecer nombre de cuenta bancaria si viene solo el ID
+        if (StringUtils.hasText(entity.getBankAccountId()) && !StringUtils.hasText(entity.getBankAccountName())) {
+            bankAccountRepository.findById(entity.getBankAccountId())
+                .ifPresent(ba -> entity.setBankAccountName(ba.getBankName()));
+        }
 
         if (support != null && !support.isEmpty()) {
             String filename = buildFilename(entity.getId(), support.getOriginalFilename());
@@ -134,6 +144,10 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
                 EPaymentMethod.valueOf(dto.getMethod().name());
             } catch (IllegalArgumentException ex) {
                 errors.put("method", "Método inválido");
+            }
+            // Si es transferencia, requerir cuenta bancaria
+            if (dto.getMethod() == EPaymentMethod.TRANSFERENCIA && !StringUtils.hasText(dto.getBankAccountId())) {
+                errors.put("bankAccountId", "Requerido para pagos por transferencia");
             }
         }
 

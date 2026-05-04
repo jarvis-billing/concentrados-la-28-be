@@ -23,5 +23,7 @@ public class SupplierPaymentDto implements Serializable {
     private EPaymentMethod method;
     private String reference;
     private String notes;
+    private String bankAccountId;
+    private String bankAccountName;
     private String supportUrl;
 }

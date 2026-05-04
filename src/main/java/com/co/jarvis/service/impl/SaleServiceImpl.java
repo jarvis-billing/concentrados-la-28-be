@@ -97,6 +97,9 @@ public class SaleServiceImpl implements SaleService {
     @Autowired
     private BatchService batchService;
 
+    @Autowired
+    private com.co.jarvis.util.BankAccountHelper bankAccountHelper;
+
     GenericMapper<Billing, BillingDto> mapper
             = new GenericMapper<>(Billing.class, BillingDto.class);
 
@@ -161,6 +164,13 @@ public class SaleServiceImpl implements SaleService {
                     } catch (IllegalArgumentException ex) {
                         throw new FieldsException("Validation failed", java.util.Map.of("payments", "Método de pago inválido: " + p.getMethod()));
                     }
+                    // Si es TRANSFERENCIA, requerir bankAccountId
+                    if (m == EPaymentMethod.TRANSFERENCIA && (p.getBankAccountId() == null || p.getBankAccountId().isBlank())) {
+                        throw new FieldsException("Validation failed", java.util.Map.of("payments", "bankAccountId requerido para pagos por transferencia"));
+                    }
+                    // Enriquecer nombre de cuenta bancaria si solo viene el ID
+                    p.setBankAccountName(bankAccountHelper.resolveBankAccountName(
+                            p.getBankAccountId(), p.getBankAccountName()));
                     methods.add(m);
                     received = received.add(p.getAmount());
                     if (m == EPaymentMethod.EFECTIVO) {

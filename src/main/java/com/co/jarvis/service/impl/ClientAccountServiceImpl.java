@@ -15,6 +15,7 @@ import com.co.jarvis.enums.EPaymentType;
 import com.co.jarvis.repository.ClientAccountRepository;
 import com.co.jarvis.repository.ClientRepository;
 import com.co.jarvis.service.ClientAccountService;
+import com.co.jarvis.util.BankAccountHelper;
 import com.co.jarvis.util.mappers.GenericMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +43,7 @@ public class ClientAccountServiceImpl implements ClientAccountService {
     private final ClientAccountRepository clientAccountRepository;
     private final ClientRepository clientRepository;
     private final MongoTemplate mongoTemplate;
+    private final BankAccountHelper bankAccountHelper;
 
     private final GenericMapper<Billing, BillingDto> billingMapper = 
             new GenericMapper<>(Billing.class, BillingDto.class);
@@ -118,10 +120,17 @@ public class ClientAccountServiceImpl implements ClientAccountService {
             throw new RuntimeException("El monto del pago debe ser mayor a cero");
         }
 
+        // Validar y enriquecer info bancaria si es transferencia
+        bankAccountHelper.requireBankAccountForTransfer(request.getPaymentMethod(), request.getBankAccountId());
+        String bankAccountName = bankAccountHelper.resolveBankAccountName(
+                request.getBankAccountId(), request.getBankAccountName());
+
         AccountPayment payment = AccountPayment.builder()
                 .id(UUID.randomUUID().toString())
                 .amount(request.getAmount())
                 .paymentMethod(request.getPaymentMethod())
+                .bankAccountId(request.getBankAccountId())
+                .bankAccountName(bankAccountName)
                 .reference(request.getReference())
                 .notes(request.getNotes())
                 .paymentDate(LocalDateTime.now())

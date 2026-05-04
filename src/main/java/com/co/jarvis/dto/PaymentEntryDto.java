@@ -16,4 +16,6 @@ public class PaymentEntryDto implements Serializable {
     private String method;      // e.g., "EFECTIVO", "TRANSFERENCIA"
     private BigDecimal amount;  // decimal(18,2)
     private String reference;   // optional
+    private String bankAccountId;
+    private String bankAccountName;
 }

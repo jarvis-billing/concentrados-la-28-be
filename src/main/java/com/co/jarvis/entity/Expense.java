@@ -36,4 +36,7 @@ public class Expense {
     private String source;
 
     private String createdBy;
+
+    private String bankAccountId;
+    private String bankAccountName;
 }

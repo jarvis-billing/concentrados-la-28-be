@@ -27,6 +27,8 @@ public class CashTransaction {
     private BigDecimal amount;                  // Monto de la transacción
     private EPaymentMethod paymentMethod;       // Método de pago
     private String reference;                   // Referencia (para transferencias, etc.)
+    private String bankAccountId;               // Cuenta bancaria asociada (para transferencias)
+    private String bankAccountName;             // Nombre/banco asociado (denormalizado)
     private LocalDateTime transactionDate;      // Fecha y hora de la transacción
     private String relatedDocumentId;           // ID del documento relacionado (factura, gasto, etc.)
 }
