@@ -89,7 +89,7 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
                                          String status, Boolean unlinkedOnly, String bankAccountId) {
         Query query = new Query();
 
-        if (isValidSupplierId(supplierId)) {
+        if (isValidParam(supplierId)) {
             query.addCriteria(Criteria.where("supplierId").is(supplierId));
         }
         if (from != null && to != null) {
@@ -102,7 +102,7 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
         } else if (Boolean.TRUE.equals(unlinkedOnly)) {
             query.addCriteria(Criteria.where("status").in("ADELANTO", "PARCIAL"));
         }
-        if (StringUtils.hasText(bankAccountId)) {
+        if (isValidParam(bankAccountId)) {
             query.addCriteria(Criteria.where("bankAccountId").is(bankAccountId));
         }
         query.with(Sort.by(Sort.Direction.DESC, "paymentDate"));
@@ -131,8 +131,8 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
         return Files.probeContentType(Paths.get(sp.getSupportPath()));
     }
 
-    private boolean isValidSupplierId(String supplierId) {
-        return StringUtils.hasText(supplierId) && !"undefined".equalsIgnoreCase(supplierId);
+    private boolean isValidParam(String value) {
+        return StringUtils.hasText(value) && !"undefined".equalsIgnoreCase(value);
     }
 
     private static String buildFilename(String id, String originalFilename) {
