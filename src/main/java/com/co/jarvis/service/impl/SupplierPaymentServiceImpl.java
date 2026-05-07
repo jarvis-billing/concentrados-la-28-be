@@ -5,6 +5,10 @@ import com.co.jarvis.entity.SupplierPayment;
 import com.co.jarvis.enums.EPaymentMethod;
 import com.co.jarvis.repository.BankAccountRepository;
 import com.co.jarvis.repository.SupplierPaymentRepository;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import com.co.jarvis.service.SupplierPaymentService;
 import com.co.jarvis.util.exception.FieldsException;
 import com.co.jarvis.util.exception.ResourceNotFoundException;
@@ -37,6 +41,9 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
     @Autowired
     private BankAccountRepository bankAccountRepository;
 
+    @Autowired
+    private MongoTemplate mongoTemplate;
+
     private final GenericMapper<SupplierPayment, SupplierPaymentDto> mapper =
             new GenericMapper<>(SupplierPayment.class, SupplierPaymentDto.class);
 
@@ -46,6 +53,16 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
 
         SupplierPayment entity = mapper.mapToEntity(dto);
         entity.setId(UUID.randomUUID().toString());
+
+        // Campos de vinculación — inicializar siempre en alta
+        entity.setStatus("ADELANTO");
+        entity.setAppliedAmount(BigDecimal.ZERO);
+        entity.setRemainingAmount(entity.getAmount());
+        entity.setLinkedPurchaseId(null);
+        entity.setLinkedAt(null);
+        entity.setLinkedBy(null);
+        entity.setCreatedAt(java.time.OffsetDateTime.now());
+        entity.setUpdatedAt(java.time.OffsetDateTime.now());
 
         // Enriquecer nombre de cuenta bancaria si viene solo el ID
         if (StringUtils.hasText(entity.getBankAccountId()) && !StringUtils.hasText(entity.getBankAccountName())) {
@@ -68,29 +85,29 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
     }
 
     @Override
-    public List<SupplierPaymentDto> list(String supplierId, LocalDate from, LocalDate to) {
-        List<SupplierPayment> result;
-        if (isValidSupplierId(supplierId) && from != null && to != null) {
-            if (from.equals(to)) {
-                result = repository.findBySupplierIdAndPaymentDate(supplierId, from);
-            } else {
-                LocalDate adjustedFrom = from.minusDays(1);
-                LocalDate adjustedTo = to.plusDays(1);
-                result = repository.findBySupplierIdAndPaymentDateBetween(supplierId, adjustedFrom, adjustedTo);
-            }
-        } else if (isValidSupplierId(supplierId) && from == null && to == null) {
-            result = repository.findBySupplierId(supplierId);
-        } else if (from != null && to != null) {
-            if (from.equals(to)) {
-                result = repository.findByPaymentDate(from);
-            } else {
-                LocalDate adjustedFrom = from.minusDays(1);
-                LocalDate adjustedTo = to.plusDays(1);
-                result = repository.findByPaymentDateBetween(adjustedFrom, adjustedTo);
-            }
-        } else {
-            result = repository.findAll();
+    public List<SupplierPaymentDto> list(String supplierId, LocalDate from, LocalDate to,
+                                         String status, Boolean unlinkedOnly, String bankAccountId) {
+        Query query = new Query();
+
+        if (isValidSupplierId(supplierId)) {
+            query.addCriteria(Criteria.where("supplierId").is(supplierId));
         }
+        if (from != null && to != null) {
+            LocalDate adjustedFrom = from.equals(to) ? from : from.minusDays(1);
+            LocalDate adjustedTo = from.equals(to) ? to : to.plusDays(1);
+            query.addCriteria(Criteria.where("paymentDate").gte(adjustedFrom).lte(adjustedTo));
+        }
+        if (StringUtils.hasText(status)) {
+            query.addCriteria(Criteria.where("status").is(status));
+        } else if (Boolean.TRUE.equals(unlinkedOnly)) {
+            query.addCriteria(Criteria.where("status").in("ADELANTO", "PARCIAL"));
+        }
+        if (StringUtils.hasText(bankAccountId)) {
+            query.addCriteria(Criteria.where("bankAccountId").is(bankAccountId));
+        }
+        query.with(Sort.by(Sort.Direction.DESC, "paymentDate"));
+
+        List<SupplierPayment> result = mongoTemplate.find(query, SupplierPayment.class);
         return mapper.mapToDtoList(result);
     }
 

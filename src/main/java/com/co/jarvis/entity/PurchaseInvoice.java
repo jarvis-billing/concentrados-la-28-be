@@ -13,6 +13,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @NoArgsConstructor
@@ -69,4 +70,16 @@ public class PurchaseInvoice {
     
     @Field("updated_at")
     private OffsetDateTime updatedAt;
+
+    @Field("payment_status")
+    @Builder.Default
+    private String paymentStatus = "PENDIENTE"; // PENDIENTE | PARCIAL | PAGADO | SOBREPAGADO
+
+    @Field("total_paid")
+    @Builder.Default
+    private BigDecimal totalPaid = BigDecimal.ZERO;
+
+    @Field("linked_payments")
+    @Builder.Default
+    private List<LinkedPayment> linkedPayments = new ArrayList<>();
 }

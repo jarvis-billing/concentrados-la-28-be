@@ -9,7 +9,8 @@ import java.util.List;
 
 public interface SupplierPaymentService {
     SupplierPaymentDto create(SupplierPaymentDto dto, MultipartFile support) throws IOException;
-    List<SupplierPaymentDto> list(String supplierId, LocalDate from, LocalDate to);
+    List<SupplierPaymentDto> list(String supplierId, LocalDate from, LocalDate to,
+                                   String status, Boolean unlinkedOnly, String bankAccountId);
     byte[] getSupport(String id) throws IOException;
     String getSupportContentType(String id) throws IOException;
 }

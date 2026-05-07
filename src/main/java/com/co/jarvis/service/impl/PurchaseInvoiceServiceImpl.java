@@ -110,6 +110,11 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
 
             // Configurar valores por defecto
             invoice.setStatus(EPurchaseInvoiceStatus.CREATED);
+            invoice.setPaymentStatus("PENDIENTE");
+            invoice.setTotalPaid(java.math.BigDecimal.ZERO);
+            if (invoice.getLinkedPayments() == null) {
+                invoice.setLinkedPayments(new java.util.ArrayList<>());
+            }
             invoice.setCreatedAt(OffsetDateTime.now());
             invoice.setUpdatedAt(OffsetDateTime.now());
 

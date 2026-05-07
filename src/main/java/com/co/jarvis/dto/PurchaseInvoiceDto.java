@@ -7,6 +7,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import com.co.jarvis.entity.LinkedPayment;
 import java.io.Serializable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -34,4 +35,7 @@ public class PurchaseInvoiceDto implements Serializable {
     private UserDto creationUser;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
+    private String paymentStatus;
+    private BigDecimal totalPaid;
+    private List<LinkedPayment> linkedPayments;
 }

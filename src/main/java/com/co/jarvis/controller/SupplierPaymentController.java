@@ -1,6 +1,8 @@
 package com.co.jarvis.controller;
 
 import com.co.jarvis.dto.SupplierPaymentDto;
+import com.co.jarvis.entity.SupplierPayment;
+import com.co.jarvis.service.PurchasePaymentService;
 import com.co.jarvis.service.SupplierPaymentService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -20,6 +22,9 @@ public class SupplierPaymentController {
 
     @Autowired
     private SupplierPaymentService service;
+
+    @Autowired
+    private PurchasePaymentService purchasePaymentService;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<SupplierPaymentDto> create(
@@ -52,12 +57,27 @@ public class SupplierPaymentController {
     public ResponseEntity<List<SupplierPaymentDto>> list(
             @RequestParam(required = false) String supplierId,
             @RequestParam(required = false) String from,
-            @RequestParam(required = false) String to
+            @RequestParam(required = false) String to,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Boolean unlinkedOnly,
+            @RequestParam(required = false) String bankAccountId
     ) {
         LocalDate fromDate = parseDate(from);
         LocalDate toDate = parseDate(to);
         String normalizedSupplierId = parseSupplierId(supplierId);
-        return ResponseEntity.ok(service.list(normalizedSupplierId, fromDate, toDate));
+        return ResponseEntity.ok(service.list(normalizedSupplierId, fromDate, toDate, status, unlinkedOnly, bankAccountId));
+    }
+
+    @GetMapping("/unlinked")
+    public ResponseEntity<List<SupplierPayment>> getUnlinked(
+            @RequestParam String supplierId) {
+        return ResponseEntity.ok(purchasePaymentService.findUnlinkedBySupplier(supplierId));
+    }
+
+    @PostMapping("/{paymentId}/unlink")
+    public ResponseEntity<Void> unlink(@PathVariable String paymentId) {
+        purchasePaymentService.unlinkPayment(paymentId);
+        return ResponseEntity.ok().build();
     }
 
     @GetMapping("/{id}/support")

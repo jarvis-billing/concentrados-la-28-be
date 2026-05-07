@@ -2,11 +2,14 @@ package com.co.jarvis.controller;
 
 import com.co.jarvis.dto.AddItemsRequest;
 import com.co.jarvis.dto.CostHistoryEntry;
+import com.co.jarvis.dto.LinkPaymentsRequest;
 import com.co.jarvis.dto.PurchaseFilterDto;
 import com.co.jarvis.dto.PurchaseInvoiceDto;
 import com.co.jarvis.dto.PurchaseLastCostInfo;
+import com.co.jarvis.dto.PurchasePaymentDetailResponse;
 import com.co.jarvis.dto.SupplierRefDto;
 import com.co.jarvis.service.PurchaseInvoiceService;
+import com.co.jarvis.service.PurchasePaymentService;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +31,9 @@ public class PurchaseInvoiceController {
 
     @Autowired
     private PurchaseInvoiceService service;
+
+    @Autowired
+    private PurchasePaymentService purchasePaymentService;
 
     /**
      * GET /api/purchases/invoices
@@ -199,5 +205,21 @@ public class PurchaseInvoiceController {
 
         List<CostHistoryEntry> history = service.getCostHistory(presentationId, from, to);
         return ResponseEntity.ok(history);
+    }
+
+    @PostMapping("/{id}/link-payments")
+    public ResponseEntity<Void> linkPayments(
+            @PathVariable String id,
+            @RequestBody LinkPaymentsRequest request,
+            @RequestHeader(value = "X-User-Id", required = false) String linkedBy) {
+        logger.info("PurchaseInvoiceController -> linkPayments: purchaseId={}", id);
+        purchasePaymentService.linkPayments(id, request.getPaymentIds(), linkedBy);
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/{id}/payments")
+    public ResponseEntity<PurchasePaymentDetailResponse> getLinkedPayments(@PathVariable String id) {
+        logger.info("PurchaseInvoiceController -> getLinkedPayments: purchaseId={}", id);
+        return ResponseEntity.ok(purchasePaymentService.getLinkedPayments(id));
     }
 }

@@ -26,4 +26,8 @@ public class SupplierPaymentDto implements Serializable {
     private String bankAccountId;
     private String bankAccountName;
     private String supportUrl;
+    private String status;
+    private String linkedPurchaseId;
+    private java.math.BigDecimal appliedAmount;
+    private java.math.BigDecimal remainingAmount;
 }
