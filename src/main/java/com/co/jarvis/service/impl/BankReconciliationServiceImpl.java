@@ -391,7 +391,7 @@ public class BankReconciliationServiceImpl implements BankReconciliationService 
                                 .amount(payment.getAmount())
                                 .paymentMethod(method)
                                 .reference(payment.getReference())
-                                .transactionDate(billing.getDateTimeRecord().toLocalDateTime())
+                                .transactionDate(billing.getDateTimeRecord().atZoneSameInstant(DateTimeUtil.getBogotaZone()).toLocalDateTime())
                                 .relatedDocumentId(billing.getId())
                                 .build());
                     }
@@ -410,7 +410,7 @@ public class BankReconciliationServiceImpl implements BankReconciliationService 
                             .description("Venta #" + billing.getBillNumber())
                             .amount(billing.getTotalBilling())
                             .paymentMethod(paymentMethod)
-                            .transactionDate(billing.getDateTimeRecord().toLocalDateTime())
+                            .transactionDate(billing.getDateTimeRecord().atZoneSameInstant(DateTimeUtil.getBogotaZone()).toLocalDateTime())
                             .relatedDocumentId(billing.getId())
                             .build());
                 }
@@ -560,7 +560,7 @@ public class BankReconciliationServiceImpl implements BankReconciliationService 
                         .amount(expense.getAmount())
                         .paymentMethod(expense.getPaymentMethod())
                         .reference(expense.getReference())
-                        .transactionDate(expense.getDateTimeRecord().toLocalDateTime())
+                        .transactionDate(expense.getDateTimeRecord().atZoneSameInstant(DateTimeUtil.getBogotaZone()).toLocalDateTime())
                         .relatedDocumentId(expense.getId())
                         .build())
                 .collect(Collectors.toList());

@@ -437,7 +437,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                             .description("Venta #" + billing.getBillNumber())
                             .amount(effectiveCash)
                             .paymentMethod(EPaymentMethod.EFECTIVO)
-                            .transactionDate(billing.getDateTimeRecord().toLocalDateTime())
+                            .transactionDate(billing.getDateTimeRecord().atZoneSameInstant(DateTimeUtil.getBogotaZone()).toLocalDateTime())
                             .relatedDocumentId(billing.getId())
                             .build());
                 }
@@ -456,7 +456,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                             .description("Venta #" + billing.getBillNumber())
                             .amount(billing.getTotalBilling())
                             .paymentMethod(EPaymentMethod.EFECTIVO)
-                            .transactionDate(billing.getDateTimeRecord().toLocalDateTime())
+                            .transactionDate(billing.getDateTimeRecord().atZoneSameInstant(DateTimeUtil.getBogotaZone()).toLocalDateTime())
                             .relatedDocumentId(billing.getId())
                             .build());
                 }
@@ -614,7 +614,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                         .amount(expense.getAmount())
                         .paymentMethod(EPaymentMethod.EFECTIVO)
                         .reference(expense.getReference())
-                        .transactionDate(expense.getDateTimeRecord().toLocalDateTime())
+                        .transactionDate(expense.getDateTimeRecord().atZoneSameInstant(DateTimeUtil.getBogotaZone()).toLocalDateTime())
                         .relatedDocumentId(expense.getId())
                         .build())
                 .collect(Collectors.toList());
