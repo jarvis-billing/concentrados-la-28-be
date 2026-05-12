@@ -1,5 +1,6 @@
 package com.co.jarvis.service;
 
+import com.co.jarvis.dto.BulkLastCostItem;
 import com.co.jarvis.dto.PurchaseFilterDto;
 import com.co.jarvis.dto.CostHistoryEntry;
 import com.co.jarvis.dto.PurchaseInvoiceDto;
@@ -48,4 +49,12 @@ public interface PurchaseInvoiceService {
      * @return Lista ordenada de más reciente a más antiguo
      */
     List<CostHistoryEntry> getCostHistory(String presentationId, LocalDate fromDate, LocalDate toDate);
+
+    /**
+     * Devuelve el último costo de compra para múltiples presentaciones (barcodes).
+     * Usa agregación MongoDB para optimización. Fallback a Product.costPrice si no hay historial.
+     * @param barcodes Lista de códigos de barras de presentaciones
+     * @return Lista de BulkLastCostItem (solo para barcodes encontrados)
+     */
+    List<BulkLastCostItem> bulkGetLastCost(List<String> barcodes);
 }

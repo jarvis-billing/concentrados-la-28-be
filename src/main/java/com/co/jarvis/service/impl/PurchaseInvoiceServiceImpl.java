@@ -1,5 +1,7 @@
 package com.co.jarvis.service.impl;
 
+import com.co.jarvis.dto.BulkLastCostItem;
+import com.co.jarvis.dto.CostSource;
 import com.co.jarvis.dto.PurchaseFilterDto;
 import com.co.jarvis.dto.CostHistoryEntry;
 import com.co.jarvis.dto.PurchaseInvoiceDto;
@@ -23,6 +25,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import org.springframework.data.mongodb.core.aggregation.AggregationOperation;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,6 +55,9 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private MongoTemplate mongoTemplate;
 
     GenericMapper<PurchaseInvoice, PurchaseInvoiceDto> mapper = 
         new GenericMapper<>(PurchaseInvoice.class, PurchaseInvoiceDto.class);
@@ -766,12 +777,162 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
         if (productById.isPresent()) {
             return productById.get();
         }
-        
+
         // Si no se encuentra por ID, buscar por productCode
         List<Product> products = productRepository.findAll();
         return products.stream()
             .filter(p -> key.equals(p.getProductCode()))
             .findFirst()
             .orElse(null);
+    }
+
+    @Override
+    public List<BulkLastCostItem> bulkGetLastCost(List<String> barcodes) {
+        log.info("PurchaseInvoiceServiceImpl -> bulkGetLastCost: {} barcodes", barcodes.size());
+
+        if (barcodes == null || barcodes.isEmpty()) {
+            return List.of();
+        }
+
+        // Paso 1: Agregación para obtener último costo de facturas de compra
+        List<AggregationOperation> operations = new ArrayList<>();
+
+        // $match: filtrar facturas con items que tengan alguno de los barcodes
+        operations.add(Aggregation.match(
+            Criteria.where("items.presentationBarcode").in(barcodes)
+        ));
+
+        // $unwind: desanidar items
+        operations.add(Aggregation.unwind("items"));
+
+        // $match: filtrar solo items con barcodes en la lista
+        operations.add(Aggregation.match(
+            Criteria.where("items.presentationBarcode").in(barcodes)
+        ));
+
+        // $sort: ordenar por fecha de factura descendente
+        operations.add(Aggregation.sort(
+            Sort.by(Sort.Direction.DESC, "invoiceDate", "createdAt")
+        ));
+
+        // $group: agrupar por barcode, tomar el primero (más reciente)
+        operations.add(Aggregation.group("items.presentationBarcode")
+            .first("items.presentationBarcode").as("barcode")
+            .first("items.description").as("productDescription")
+            .first("items.unitCost").as("unitCost")
+            .first("items.vatRate").as("vatRate")
+            .first("items.vatAmount").as("vatAmount")
+            .first("items.quantity").as("quantity")
+            .first("items.freightAmount").as("freightAmount")
+            .first("items.unitTotalCost").as("unitTotalCost")
+            .first("id").as("invoiceId")
+            .first("invoiceNumber").as("invoiceNumber")
+            .first("invoiceDate").as("invoiceDate")
+            .first("supplier.id").as("supplierId")
+            .first("supplier.name").as("supplierName")
+        );
+
+        Aggregation aggregation = Aggregation.newAggregation(operations);
+        AggregationResults<Map> results = mongoTemplate.aggregate(
+            aggregation, "PURCHASE_INVOICES", Map.class
+        );
+
+        // Mapear resultados a BulkLastCostItem con source PURCHASE_INVOICE
+        Map<String, BulkLastCostItem> resultMap = new HashMap<>();
+        for (Map doc : results.getMappedResults()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = doc;
+            String barcode = (String) map.get("barcode");
+            if (barcode != null) {
+                BigDecimal unitCost = getDecimal(map.get("unitCost"));
+                BigDecimal vatRate = getDecimal(map.get("vatRate"));
+                BigDecimal vatAmount = getDecimal(map.get("vatAmount"));
+                BigDecimal quantity = getDecimal(map.get("quantity"));
+                BigDecimal freightAmount = getDecimal(map.get("freightAmount"));
+                BigDecimal unitTotalCost = getDecimal(map.get("unitTotalCost"));
+
+                BigDecimal vatPerUnit = (vatAmount != null && quantity != null && quantity.compareTo(BigDecimal.ZERO) > 0)
+                    ? vatAmount.divide(quantity, 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+                BigDecimal freightPerUnit = (freightAmount != null && quantity != null && quantity.compareTo(BigDecimal.ZERO) > 0)
+                    ? freightAmount.divide(quantity, 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+
+                LocalDate invoiceDate = (LocalDate) map.get("invoiceDate");
+                String invoiceDateStr = invoiceDate != null ? invoiceDate.toString() : null;
+
+                resultMap.put(barcode, new BulkLastCostItem(
+                    barcode,
+                    barcode,
+                    (String) map.get("productDescription"),
+                    unitCost != null ? unitCost.doubleValue() : 0,
+                    vatRate != null ? vatRate.doubleValue() : 0,
+                    vatPerUnit.doubleValue(),
+                    freightPerUnit.doubleValue(),
+                    unitTotalCost != null ? unitTotalCost.doubleValue() : 0,
+                    (String) map.get("invoiceId"),
+                    (String) map.get("invoiceNumber"),
+                    invoiceDateStr,
+                    (String) map.get("supplierId"),
+                    (String) map.get("supplierName"),
+                    CostSource.PURCHASE_INVOICE
+                ));
+            }
+        }
+
+        // Paso 2: Fallback a Product.costPrice para barcodes sin historial
+        List<String> barcodesWithoutHistory = barcodes.stream()
+            .filter(b -> !resultMap.containsKey(b))
+            .toList();
+
+        if (!barcodesWithoutHistory.isEmpty()) {
+            // Usar MongoTemplate para buscar productos con presentaciones en la lista
+            Query query = new Query(Criteria.where("presentations.barcode").in(barcodesWithoutHistory));
+            List<Product> products = mongoTemplate.find(query, Product.class);
+            for (Product product : products) {
+                if (product.getPresentations() != null) {
+                    for (Presentation pres : product.getPresentations()) {
+                        String barcode = pres.getBarcode();
+                        if (barcode != null && barcodesWithoutHistory.contains(barcode) && !resultMap.containsKey(barcode)) {
+                            BigDecimal costPrice = pres.getCostPrice() != null ? pres.getCostPrice() : BigDecimal.ZERO;
+                            resultMap.put(barcode, new BulkLastCostItem(
+                                barcode,
+                                barcode,
+                                product.getDescription(),
+                                costPrice.doubleValue(),
+                                0,
+                                0,
+                                0,
+                                costPrice.doubleValue(),
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                CostSource.PRODUCT_ENTITY
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Retornar lista manteniendo orden de entrada (solo barcodes encontrados)
+        List<BulkLastCostItem> finalResult = barcodes.stream()
+            .filter(resultMap::containsKey)
+            .map(resultMap::get)
+            .toList();
+
+        log.info("bulkGetLastCost -> {} resultados encontrados", finalResult.size());
+        return finalResult;
+    }
+
+    private BigDecimal getDecimal(Object value) {
+        if (value == null) return null;
+        if (value instanceof BigDecimal) return (BigDecimal) value;
+        if (value instanceof Double) return BigDecimal.valueOf((Double) value);
+        if (value instanceof Integer) return BigDecimal.valueOf((Integer) value);
+        if (value instanceof Long) return BigDecimal.valueOf((Long) value);
+        return null;
     }
 }

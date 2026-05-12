@@ -1,6 +1,8 @@
 package com.co.jarvis.controller;
 
 import com.co.jarvis.dto.AddItemsRequest;
+import com.co.jarvis.dto.BulkLastCostItem;
+import com.co.jarvis.dto.BulkLastCostRequest;
 import com.co.jarvis.dto.CostHistoryEntry;
 import com.co.jarvis.dto.LinkPaymentsRequest;
 import com.co.jarvis.dto.PurchaseFilterDto;
@@ -221,5 +223,12 @@ public class PurchaseInvoiceController {
     public ResponseEntity<PurchasePaymentDetailResponse> getLinkedPayments(@PathVariable String id) {
         logger.info("PurchaseInvoiceController -> getLinkedPayments: purchaseId={}", id);
         return ResponseEntity.ok(purchasePaymentService.getLinkedPayments(id));
+    }
+
+    @PostMapping("/last-cost/bulk")
+    public ResponseEntity<List<BulkLastCostItem>> bulkLastCost(
+            @Valid @RequestBody BulkLastCostRequest request) {
+        logger.info("PurchaseInvoiceController -> bulkLastCost: {} barcodes", request.barcodes().size());
+        return ResponseEntity.ok(service.bulkGetLastCost(request.barcodes()));
     }
 }
