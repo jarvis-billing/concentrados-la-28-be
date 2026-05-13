@@ -131,38 +131,45 @@ public class BatchServiceImpl implements BatchService {
     @Override
     @Transactional
     public Batch updatePrice(UpdateBatchPriceRequest request) {
-        log.info("BatchServiceImpl -> updatePrice for productId: {}", request.getProductId());
+        log.info("BatchServiceImpl -> updatePrice for batchId: {}, productId: {}",
+                request.getBatchId(), request.getProductId());
 
-        validateProduct(request.getProductId());
+        Batch batch = batchRepository.findById(request.getBatchId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Lote no encontrado con ID: " + request.getBatchId()));
 
-        List<Batch> activeBatches = batchRepository.findByProductIdAndStatus(
-                request.getProductId(), BatchStatus.ACTIVE);
-
-        if (activeBatches.isEmpty()) {
-            throw new SaveRecordException("No hay lotes activos para actualizar el precio del producto: " + request.getProductId());
+        if (!batch.getProductId().equals(request.getProductId())) {
+            throw new SaveRecordException(String.format(
+                    "El lote '%s' no pertenece al producto '%s'",
+                    request.getBatchId(), request.getProductId()));
         }
 
-        int totalStock = activeBatches.stream()
-                .mapToInt(Batch::getCurrentStock)
-                .sum();
-
-        Integer priceValidityDays = request.getPriceValidityDays();
-        if (priceValidityDays == null) {
-            priceValidityDays = activeBatches.stream()
-                    .filter(b -> b.getPriceValidityDays() != null)
-                    .findFirst()
-                    .map(Batch::getPriceValidityDays)
-                    .orElse(BatchConstants.BATCH_DEFAULT_PRICE_VALIDITY_DAYS);
+        if (batch.getStatus() == BatchStatus.CLOSED || batch.getStatus() == BatchStatus.DEPLETED) {
+            throw new SaveRecordException(String.format(
+                    "No se puede actualizar el precio de un lote con estado '%s'", batch.getStatus()));
         }
+
+        int stockToTransfer = batch.getCurrentStock() != null ? batch.getCurrentStock() : 0;
+
+        Integer priceValidityDays = request.getPriceValidityDays() != null
+                ? request.getPriceValidityDays()
+                : (batch.getPriceValidityDays() != null
+                        ? batch.getPriceValidityDays()
+                        : BatchConstants.BATCH_DEFAULT_PRICE_VALIDITY_DAYS);
 
         LocalDateTime now = LocalDateTime.now(COLOMBIA_ZONE);
-        for (Batch batch : activeBatches) {
-            batch.setStatus(BatchStatus.CLOSED);
-            batch.setUpdatedAt(now);
-            batch.setNotes(appendNote(batch.getNotes(), "Cerrado por actualización de precio"));
-        }
-        batchRepository.saveAll(activeBatches);
-        log.info("Closed {} active batches for product: {}", activeBatches.size(), request.getProductId());
+        batch.setStatus(BatchStatus.CLOSED);
+        batch.setUpdatedAt(now);
+        batch.setNotes(appendNote(batch.getNotes(), "Cerrado por actualización de precio"));
+        batchRepository.save(batch);
+        log.info("Closed batch ID: {} (batchNumber: {}, stock: {})",
+                batch.getId(), batch.getBatchNumber(), stockToTransfer);
+
+        String productDescription = (batch.getProductDescription() != null && !batch.getProductDescription().isBlank())
+                ? batch.getProductDescription()
+                : productRepository.findById(batch.getProductId())
+                        .map(Product::getDescription)
+                        .orElse(null);
 
         int newBatchNumber = calculateNextBatchNumber(request.getProductId());
         LocalDate entryDate = LocalDate.now(COLOMBIA_ZONE);
@@ -170,12 +177,13 @@ public class BatchServiceImpl implements BatchService {
 
         Batch newBatch = Batch.builder()
                 .batchNumber(newBatchNumber)
-                .productId(request.getProductId())
+                .productId(batch.getProductId())
+                .productDescription(productDescription)
                 .entryDate(entryDate)
                 .salePrice(request.getNewSalePrice())
-                .initialStock(totalStock)
-                .currentStock(totalStock)
-                .unitMeasure("UNIDAD")
+                .initialStock(stockToTransfer)
+                .currentStock(stockToTransfer)
+                .unitMeasure(batch.getUnitMeasure())
                 .priceValidityDays(priceValidityDays)
                 .expirationDate(expirationDate)
                 .status(BatchStatus.ACTIVE)
@@ -185,8 +193,8 @@ public class BatchServiceImpl implements BatchService {
                 .build();
 
         Batch savedBatch = batchRepository.save(newBatch);
-        log.info("New batch created with updated price. ID: {}, batchNumber: {}, totalStock: {}", 
-                savedBatch.getId(), savedBatch.getBatchNumber(), totalStock);
+        log.info("New batch created. ID: {}, batchNumber: {}, stock: {}, price: {}",
+                savedBatch.getId(), savedBatch.getBatchNumber(), stockToTransfer, request.getNewSalePrice());
 
         return savedBatch;
     }

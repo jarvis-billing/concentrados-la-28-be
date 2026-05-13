@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @Data
 public class UpdateBatchPriceRequest {
+    private String batchId;
     private String productId;
     private BigDecimal newSalePrice;
     private Integer priceValidityDays;
