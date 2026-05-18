@@ -198,6 +198,9 @@ public class SaleServiceImpl implements SaleService {
                 dto.setReturnedValue(returned);
             }
 
+            // Pre-validar lotes ANTES de guardar la factura
+            validateBatchesForSale(dto.getSaleDetails());
+
             Billing venta = mapper.mapToEntity(dto);
             Long orderNumber = dto.getOrder().getOrderNumber();
             if (orderNumber != null && orderNumber.intValue() > 0) {
@@ -718,6 +721,42 @@ public class SaleServiceImpl implements SaleService {
             return valorTotal.multiply(iva);
         }
         return BigDecimal.ZERO;
+    }
+
+    /**
+     * Valida los lotes antes de guardar la factura para evitar guardar la factura
+     * si un lote no está disponible o no tiene stock suficiente.
+     */
+    private void validateBatchesForSale(List<SaleDetailDto> saleDetails) {
+        if (saleDetails == null || saleDetails.isEmpty()) return;
+
+        for (SaleDetailDto detail : saleDetails) {
+            if (detail.getBatchId() == null || detail.getBatchId().isBlank()) continue;
+            if (detail.getAmount() == null || detail.getAmount().compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            com.co.jarvis.entity.Batch batch = batchService.getBatchById(detail.getBatchId());
+
+            if (batch.getStatus() == com.co.jarvis.enums.BatchStatus.DEPLETED
+                    || batch.getStatus() == com.co.jarvis.enums.BatchStatus.CLOSED) {
+                throw new SaveRecordException(
+                        "El lote #" + batch.getBatchNumber() + " no está disponible para ventas. Estado: " + batch.getStatus());
+            }
+
+            if (batch.getStatus() == com.co.jarvis.enums.BatchStatus.EXPIRED
+                    || (batch.getExpirationDate() != null
+                            && batch.getExpirationDate().isBefore(java.time.LocalDate.now(com.co.jarvis.util.DateTimeUtil.getBogotaZone())))) {
+                throw new SaveRecordException(
+                        "El precio del lote #" + batch.getBatchNumber() + " está expirado. Actualice el precio antes de vender.");
+            }
+
+            int requested = detail.getAmount().intValue();
+            int available = batch.getCurrentStock() != null ? batch.getCurrentStock() : 0;
+            if (requested > available) {
+                throw new SaveRecordException(String.format(
+                        "Stock insuficiente en el lote #%d. Disponible: %d, solicitado: %d",
+                        batch.getBatchNumber(), available, requested));
+            }
+        }
     }
 
     /**

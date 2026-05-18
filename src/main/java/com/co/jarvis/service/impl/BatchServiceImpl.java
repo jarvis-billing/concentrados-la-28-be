@@ -208,14 +208,26 @@ public class BatchServiceImpl implements BatchService {
         Batch batch = batchRepository.findById(request.getBatchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Lote no encontrado con ID: " + request.getBatchId()));
 
+        if (batch.getStatus() == BatchStatus.DEPLETED || batch.getStatus() == BatchStatus.CLOSED) {
+            throw new SaveRecordException(
+                    "El lote #" + batch.getBatchNumber() + " no está disponible para ventas. Estado: " + batch.getStatus());
+        }
+
+        if (batch.getStatus() == BatchStatus.EXPIRED
+                || (batch.getExpirationDate() != null
+                        && batch.getExpirationDate().isBefore(LocalDate.now(COLOMBIA_ZONE)))) {
+            throw new SaveRecordException(
+                    "El precio del lote #" + batch.getBatchNumber() + " está expirado. Actualice el precio antes de vender.");
+        }
+
         if (batch.getStatus() != BatchStatus.ACTIVE) {
-            throw new SaveRecordException("El lote no está activo. Estado actual: " + batch.getStatus());
+            throw new SaveRecordException("El lote #" + batch.getBatchNumber() + " no está activo. Estado: " + batch.getStatus());
         }
 
         if (request.getQuantity() > batch.getCurrentStock()) {
             throw new SaveRecordException(String.format(
-                    "Stock insuficiente. Solicitado: %d, Disponible: %d", 
-                    request.getQuantity(), batch.getCurrentStock()));
+                    "Stock insuficiente en el lote #%d. Disponible: %d, solicitado: %d",
+                    batch.getBatchNumber(), batch.getCurrentStock(), request.getQuantity()));
         }
 
         batch.setCurrentStock(batch.getCurrentStock() - request.getQuantity());
