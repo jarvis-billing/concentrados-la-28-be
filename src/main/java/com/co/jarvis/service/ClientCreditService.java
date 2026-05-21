@@ -49,4 +49,10 @@ public interface ClientCreditService {
      * @return Transacción creada
      */
     CreditTransaction registerManualCredit(ManualCreditRequest request, String createdBy);
+
+    /**
+     * Devuelve el monto de saldo a favor (CONSUMPTION) que se usó para pagar una factura específica.
+     * Retorna ZERO si el cliente no tiene historial de crédito o si la factura no usó saldo a favor.
+     */
+    BigDecimal getCreditUsedForBilling(String clientId, String billingId);
 }

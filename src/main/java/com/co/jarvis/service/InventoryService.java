@@ -63,4 +63,10 @@ public interface InventoryService {
     
     void registerSaleMovement(String billingId, String productId, Double quantity, 
                                String presentationBarcode, String userId);
+
+    void registerSaleReturnMovement(String returnId, String productId, Double quantity,
+                                    String presentationBarcode, String userId);
+
+    void registerPurchaseReturnMovement(String returnId, String productId, Double quantity,
+                                        String presentationBarcode, String userId);
 }

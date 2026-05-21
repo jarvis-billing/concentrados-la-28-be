@@ -31,4 +31,6 @@ public interface ClientAccountService {
     List<AccountSummary> generateReport(AccountReportFilter filter);
 
     AccountTransaction registerManualDebt(ManualDebtRequest request, String createdBy);
+
+    AccountTransaction reduceDebtForReturn(String clientId, BigDecimal amount, String returnId, String notes, String createdBy);
 }

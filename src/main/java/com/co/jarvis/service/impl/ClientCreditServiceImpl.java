@@ -442,4 +442,17 @@ public class ClientCreditServiceImpl implements ClientCreditService {
 
         return transaction;
     }
+
+    @Override
+    public BigDecimal getCreditUsedForBilling(String clientId, String billingId) {
+        log.info("ClientCreditServiceImpl -> getCreditUsedForBilling: clientId={}, billingId={}", clientId, billingId);
+        return clientCreditRepository.findByClientId(clientId)
+                .map(ClientCredit::getTransactions)
+                .orElse(Collections.emptyList())
+                .stream()
+                .filter(t -> ECreditTransactionType.CONSUMPTION == t.getType()
+                        && billingId.equals(t.getBillingId()))
+                .map(CreditTransaction::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
 }

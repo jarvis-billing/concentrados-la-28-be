@@ -4,5 +4,6 @@ public enum EAccountTransactionType {
     CREDIT_SALE,      // Deuda por venta a crédito
     MANUAL_DEBT,      // Deuda manual (migración cuaderno)
     PAYMENT,          // Abono/pago
-    ADJUSTMENT        // Ajuste manual
+    ADJUSTMENT,       // Ajuste manual
+    RETURN_ADJUSTMENT // Ajuste por devolución de mercancía
 }

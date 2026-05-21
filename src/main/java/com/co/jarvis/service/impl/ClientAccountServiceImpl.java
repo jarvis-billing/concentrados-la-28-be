@@ -288,4 +288,39 @@ public class ClientAccountServiceImpl implements ClientAccountService {
         log.info("Manual debt registered successfully. New balance: {}", account.getCurrentBalance());
         return transaction;
     }
+
+    @Override
+    @Transactional
+    public AccountTransaction reduceDebtForReturn(String clientId, BigDecimal amount, String returnId,
+                                                  String notes, String createdBy) {
+        log.info("ClientAccountServiceImpl -> reduceDebtForReturn: clientId={}, amount={}, returnId={}",
+                clientId, amount, returnId);
+
+        ClientAccount account = clientAccountRepository.findByClientId(clientId)
+                .orElseThrow(() -> new RuntimeException("Cuenta no encontrada para el cliente: " + clientId));
+
+        BigDecimal reduction = amount.min(account.getTotalDebt());
+        account.setTotalDebt(account.getTotalDebt().subtract(reduction));
+        account.setCurrentBalance(account.getTotalDebt().subtract(account.getTotalPaid()));
+        account.setUpdatedAt(LocalDateTime.now());
+
+        AccountTransaction transaction = AccountTransaction.builder()
+                .id(UUID.randomUUID().toString())
+                .type(EAccountTransactionType.RETURN_ADJUSTMENT)
+                .amount(reduction.negate())
+                .balanceAfter(account.getCurrentBalance())
+                .billingId(returnId)
+                .notes(notes != null ? notes : "Ajuste por devolución de mercancía")
+                .source("DEVOLUCION-" + returnId)
+                .transactionDate(java.time.LocalDate.now())
+                .createdBy(createdBy)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        account.getTransactions().add(transaction);
+        clientAccountRepository.save(account);
+
+        log.info("Debt reduced for return. New balance: {}", account.getCurrentBalance());
+        return transaction;
+    }
 }

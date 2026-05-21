@@ -1006,6 +1006,74 @@ public class InventoryServiceImpl implements InventoryService {
         movementRepository.save(movement);
     }
 
+    @Override
+    @Transactional
+    public void registerSaleReturnMovement(String returnId, String productId, Double quantity,
+                                           String presentationBarcode, String userId) {
+        log.info("InventoryService -> registerSaleReturnMovement for product: {}", productId);
+
+        Product product = productRepository.findById(Objects.requireNonNull(productId))
+                .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado"));
+
+        Double previousStock = product.getStock().getQuantity().doubleValue();
+        Double newStock = previousStock + quantity;
+
+        product.getStock().setQuantity(BigDecimal.valueOf(newStock));
+        productRepository.save(product);
+
+        InventoryMovement movement = InventoryMovement.builder()
+                .date(DateTimeUtil.nowLocalDateTime())
+                .productId(productId)
+                .product(buildProductReference(product))
+                .presentationBarcode(presentationBarcode)
+                .movementType(EMovementType.DEVOLUCION_VENTA)
+                .quantity(quantity)
+                .previousStock(previousStock)
+                .newStock(newStock)
+                .unitMeasure(product.getStock().getUnitMeasure() != null ?
+                        product.getStock().getUnitMeasure().name() : null)
+                .reference("DEV-VENTA-" + returnId)
+                .userId(userId)
+                .createdAt(DateTimeUtil.nowLocalDateTime())
+                .build();
+
+        movementRepository.save(movement);
+    }
+
+    @Override
+    @Transactional
+    public void registerPurchaseReturnMovement(String returnId, String productId, Double quantity,
+                                               String presentationBarcode, String userId) {
+        log.info("InventoryService -> registerPurchaseReturnMovement for product: {}", productId);
+
+        Product product = productRepository.findById(Objects.requireNonNull(productId))
+                .orElseThrow(() -> new ResourceNotFoundException("Producto no encontrado"));
+
+        Double previousStock = product.getStock().getQuantity().doubleValue();
+        Double newStock = previousStock - quantity;
+
+        product.getStock().setQuantity(BigDecimal.valueOf(newStock));
+        productRepository.save(product);
+
+        InventoryMovement movement = InventoryMovement.builder()
+                .date(DateTimeUtil.nowLocalDateTime())
+                .productId(productId)
+                .product(buildProductReference(product))
+                .presentationBarcode(presentationBarcode)
+                .movementType(EMovementType.DEVOLUCION_COMPRA)
+                .quantity(-quantity)
+                .previousStock(previousStock)
+                .newStock(newStock)
+                .unitMeasure(product.getStock().getUnitMeasure() != null ?
+                        product.getStock().getUnitMeasure().name() : null)
+                .reference("DEV-COMPRA-" + returnId)
+                .userId(userId)
+                .createdAt(DateTimeUtil.nowLocalDateTime())
+                .build();
+
+        movementRepository.save(movement);
+    }
+
     // ========== MÉTODOS AUXILIARES ==========
 
     private ProductReference buildProductReference(Product product) {

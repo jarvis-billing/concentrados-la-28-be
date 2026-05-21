@@ -26,6 +26,9 @@ public class UserDto implements Serializable {
     private String fullName;
 
     public String getFullName() {
-        return name.concat(" ").concat(surname);
+        if (name != null && surname != null) {
+            return name.concat(" ").concat(surname);
+        }
+        return fullName;
     }
 }
