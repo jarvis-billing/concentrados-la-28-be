@@ -23,6 +23,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import java.io.IOException;
 import java.util.Map;
 
+import org.springframework.web.cors.CorsConfigurationSource;
+
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
@@ -34,7 +36,7 @@ public class SecurityConfig {
         return new AccessDeniedHandler() {
             @Override
             public void handle(HttpServletRequest request, HttpServletResponse response,
-                               org.springframework.security.access.AccessDeniedException accessDeniedException)
+                    org.springframework.security.access.AccessDeniedException accessDeniedException)
                     throws IOException, ServletException {
                 response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                 response.setContentType("application/json");
@@ -56,20 +58,33 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtRequestFilter jwtRequestFilter,
-                                                  AccessDeniedHandler customAccessDeniedHandler,
-                                                  AuthenticationEntryPoint customAuthenticationEntryPoint) throws Exception {
+            AccessDeniedHandler customAccessDeniedHandler,
+            AuthenticationEntryPoint customAuthenticationEntryPoint,
+            CorsConfigurationSource corsConfigurationSource) throws Exception {
 
-        http.exceptionHandling(exceptionHandling -> {
-                    exceptionHandling
-                        .accessDeniedHandler(customAccessDeniedHandler)
-                        .authenticationEntryPoint(customAuthenticationEntryPoint);
-                })
+        http.cors(cors -> cors.configurationSource(corsConfigurationSource))
+                .exceptionHandling(exceptionHandling -> {
+            exceptionHandling
+                    .accessDeniedHandler(customAccessDeniedHandler)
+                    .authenticationEntryPoint(customAuthenticationEntryPoint);
+        })
                 .csrf(AbstractHttpConfigurer::disable)
-                .sessionManagement(securitySession -> securitySession.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .sessionManagement(
+                        securitySession -> securitySession.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(requestAuthorize -> {
                     requestAuthorize
                             .requestMatchers(HttpMethod.POST, "/api/user").permitAll()
                             .requestMatchers("/api/auth/login").permitAll()
+                            .requestMatchers("/ws/preventa").permitAll()
+                            .requestMatchers(HttpMethod.POST, "/api/preventas").hasAnyRole("ADMIN", "VENDEDOR")
+                            .requestMatchers(HttpMethod.POST, "/api/preventas/list")
+                            .hasAnyRole("ADMIN", "FACTURADOR", "VENDEDOR")
+                            .requestMatchers(HttpMethod.GET, "/api/preventas/**")
+                            .hasAnyRole("ADMIN", "FACTURADOR", "VENDEDOR")
+                            .requestMatchers(HttpMethod.PATCH, "/api/preventas/*/resend").hasAnyRole("ADMIN", "VENDEDOR")
+                            .requestMatchers(HttpMethod.PATCH, "/api/preventas/*/cancel").hasAnyRole("ADMIN", "FACTURADOR")
+                            .requestMatchers(HttpMethod.PATCH, "/api/preventas/*/billed").hasAnyRole("ADMIN", "FACTURADOR")
+                            .requestMatchers(HttpMethod.PATCH, "/api/preventas/**").hasAnyRole("ADMIN", "FACTURADOR")
                             .anyRequest().authenticated();
                 });
 

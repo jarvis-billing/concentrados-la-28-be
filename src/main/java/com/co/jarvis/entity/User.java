@@ -26,7 +26,7 @@ public class User {
     private String address;
     @DBRef(lazy = false)
     private Company company;
-    private EUserRol role;
+    private EUserRol rol;
     private String fullName;
 
     public String getFullName() {

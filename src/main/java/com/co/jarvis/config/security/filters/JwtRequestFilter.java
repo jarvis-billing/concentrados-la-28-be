@@ -2,6 +2,9 @@ package com.co.jarvis.config.security.filters;
 
 import java.io.IOException;
 import java.util.Collections;
+import java.util.List;
+
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -45,8 +48,11 @@ public class JwtRequestFilter extends OncePerRequestFilter {
         if (userDto != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
             if (jwtProvider.validateToken(jwt, userDto.getNumberIdentity())) {
+                List<SimpleGrantedAuthority> authorities = (userDto.getRol() != null)
+                        ? List.of(new SimpleGrantedAuthority(userDto.getRol().name()))
+                        : Collections.emptyList();
                 UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
-                        userDto, null, Collections.emptyList());
+                        userDto, null, authorities);
 
                 authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
