@@ -14,7 +14,11 @@ public class CorsConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of("http://localhost:4200", "http://10.169.76.46:4200"));
+        config.setAllowedOrigins(List.of(
+                "http://localhost:4200",
+                "http://192.168.101.3:4200",
+                "https://concentrados-la-28-fe-fa659e0b45f1.herokuapp.com"
+        ));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
