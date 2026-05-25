@@ -5,4 +5,6 @@ import com.co.jarvis.dto.UserDto;
 public interface UserService extends BaseService<UserDto> {
 
     UserDto loginUser(String numeroIdentidad, String password);
+
+    void changeOwnPassword(String numberIdentity, String newPassword);
 }

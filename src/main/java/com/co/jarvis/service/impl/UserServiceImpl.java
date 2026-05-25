@@ -89,6 +89,15 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
+    public void changeOwnPassword(String numberIdentity, String newPassword) {
+        log.info("UserServiceImpl -> changeOwnPassword: {}", numberIdentity);
+        User user = repository.findByNumberIdentity(numberIdentity)
+                .orElseThrow(() -> new ResourceNotFoundException(MessageConstants.RESOURCE_NOT_FOUND));
+        user.setPassword(passwordEncoder.encode(newPassword));
+        repository.save(user);
+    }
+
+    @Override
     public UserDto update(UserDto dto, String id) {
         logger.info("UserServiceImpl -> update");
         try {
