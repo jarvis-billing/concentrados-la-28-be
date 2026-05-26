@@ -36,7 +36,7 @@ public class PreSaleServiceImpl implements PreSaleService {
     private final MongoTemplate mongoTemplate;
 
     @Override
-    public PreSale create(CreatePreSaleRequest request) {
+    public PreSale create(CreatePreSaleRequest request, String createdBy) {
         log.info("PreSaleServiceImpl -> create for seller: {}", request.getSellerName());
         LocalDateTime now = LocalDateTime.now(COLOMBIA_ZONE);
         PreSale preSale = PreSale.builder()
@@ -47,6 +47,7 @@ public class PreSaleServiceImpl implements PreSaleService {
                 .totalAmount(request.getTotalAmount())
                 .notes(request.getNotes())
                 .createdAt(now)
+                .createdBy(createdBy)
                 .finalizedAt(now)
                 .build();
         PreSale saved = preSaleRepository.save(preSale);

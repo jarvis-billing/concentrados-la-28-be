@@ -26,9 +26,10 @@ public class PreSaleController {
     private final PreSaleWebSocketHandler webSocketHandler;
 
     @PostMapping
-    public ResponseEntity<PreSaleDto> create(@RequestBody CreatePreSaleRequest request) {
+    public ResponseEntity<PreSaleDto> create(@RequestBody CreatePreSaleRequest request, Authentication auth) {
         log.info("PreSaleController -> create");
-        PreSale saved = preSaleService.create(request);
+        UserDto actor = (UserDto) auth.getPrincipal();
+        PreSale saved = preSaleService.create(request, actor.getNumberIdentity());
         webSocketHandler.broadcast(new WsMessage<>("PREVENTA_READY", toNotification(saved)));
         return ResponseEntity.ok(toDto(saved));
     }
@@ -102,6 +103,7 @@ public class PreSaleController {
                 .totalAmount(preSale.getTotalAmount())
                 .notes(preSale.getNotes())
                 .createdAt(preSale.getCreatedAt())
+                .createdBy(preSale.getCreatedBy())
                 .finalizedAt(preSale.getFinalizedAt())
                 .billedAt(preSale.getBilledAt())
                 .billingId(preSale.getBillingId())

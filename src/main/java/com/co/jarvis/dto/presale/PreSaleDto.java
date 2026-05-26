@@ -22,6 +22,7 @@ public class PreSaleDto {
     private double totalAmount;
     private String notes;
     private LocalDateTime createdAt;
+    private String createdBy;
     private LocalDateTime finalizedAt;
     private LocalDateTime billedAt;
     private String billingId;

@@ -8,7 +8,7 @@ import java.util.List;
 
 public interface PreSaleService {
 
-    PreSale create(CreatePreSaleRequest request);
+    PreSale create(CreatePreSaleRequest request, String createdBy);
 
     PreSale findById(String id);
 
