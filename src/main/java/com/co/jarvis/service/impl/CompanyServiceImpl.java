@@ -34,7 +34,8 @@ public class CompanyServiceImpl implements CompanyService {
 
     @Override
     public CompanyDto findById(String id) {
-        return mapper.mapToDto(repository.findById(id).get());
+        return mapper.mapToDto(repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(MessageConstants.RESOURCE_NOT_FOUND)));
     }
 
     @Override
