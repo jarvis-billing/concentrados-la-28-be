@@ -109,13 +109,19 @@ public class PreSaleServiceImpl implements PreSaleService {
 
     @Override
     public PreSale markAsBilled(String id, String billingId, String billedBy) {
-        log.info("PreSaleServiceImpl -> markAsBilled: {}, billingId: {}", id, billingId);
+        return markAsBilled(id, billingId, null, billedBy);
+    }
+
+    public PreSale markAsBilled(String id, String billingId, String billNumber, String billedBy) {
+        log.info("PreSaleServiceImpl -> markAsBilled: {}, billingId: {}, billNumber: {}",
+                id, billingId, billNumber);
         PreSale preSale = findById(id);
         if (preSale.getStatus() != PreSaleStatus.PENDING) {
             throw new SaveRecordException("La preventa ya fue procesada");
         }
         preSale.setStatus(PreSaleStatus.BILLED);
         preSale.setBillingId(billingId);
+        preSale.setBillNumber(billNumber);   // número legible de la factura
         preSale.setBilledAt(LocalDateTime.now(COLOMBIA_ZONE));
         preSale.setBilledBy(billedBy);
         return preSaleRepository.save(preSale);

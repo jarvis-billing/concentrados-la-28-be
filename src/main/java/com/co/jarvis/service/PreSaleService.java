@@ -17,4 +17,6 @@ public interface PreSaleService {
     PreSale cancel(String id, String cancelledBy);
 
     PreSale markAsBilled(String id, String billingId, String billedBy);
+
+    PreSale markAsBilled(String id, String billingId, String billNumber, String billedBy);
 }

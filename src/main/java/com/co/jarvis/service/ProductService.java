@@ -36,4 +36,15 @@ public interface ProductService extends BaseService<ProductDto> {
 
     DisplayStock computeDisplayStock(Product product);
 
+    /**
+     * Actualiza cualquier campo de una presentación específica identificada por su UUID.
+     * Permite cambiar el barcode sin duplicar ni perder la presentación.
+     *
+     * @param productId        ID del producto que contiene la presentación
+     * @param presentationId   UUID de la presentación a actualizar
+     * @param patch            Campos a actualizar (todos los del objeto Presentation)
+     * @return ProductDto actualizado
+     */
+    ProductDto updatePresentation(String productId, String presentationId,
+                                  com.co.jarvis.entity.Presentation patch);
 }

@@ -92,6 +92,28 @@ public class ProductController extends GenericController<ProductDto, ProductServ
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * PATCH /api/product/{productId}/presentations/{presentationId}
+     * Actualiza cualquier campo de una presentación específica identificada por su UUID.
+     * Permite cambiar el barcode sin duplicar la presentación.
+     */
+    @PatchMapping(value = "/{productId}/presentations/{presentationId}", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> updatePresentation(
+            @PathVariable String productId,
+            @PathVariable String presentationId,
+            @RequestBody com.co.jarvis.entity.Presentation patch) {
+        logger.info("ProductController -> updatePresentation: productId={}, presentationId={}", productId, presentationId);
+        try {
+            com.co.jarvis.dto.ProductDto updated = service.updatePresentation(productId, presentationId, patch);
+            return ResponseEntity.ok(updated);
+        } catch (com.co.jarvis.util.exception.ResourceNotFoundException e) {
+            return ResponseEntity.status(404).body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            logger.error("Error updating presentation: {}", e.getMessage());
+            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @GetMapping(value = "/validateOrGenerateBarcode", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, String>> validateOrGenerateBarcode(@RequestParam(required = false) String barcode) {
         logger.info("ProductController -> validateOrGenerateBarcode");

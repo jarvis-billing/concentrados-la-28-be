@@ -39,4 +39,10 @@ public class BillingDto implements Serializable {
     private EPaymentType saleType;
     private List<PaymentEntryDto> payments;
     private BigDecimal creditToApply;
+
+    /** IDs de las preventas que componen esta factura (puede ser más de una) */
+    private List<String> preSaleIds;
+
+    /** Número(s) de preventa para mostrar en UI — calculado al enriquecer el reporte */
+    private String preSaleNumber;
 }

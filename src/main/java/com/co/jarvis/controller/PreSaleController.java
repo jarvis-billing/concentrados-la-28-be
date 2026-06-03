@@ -62,7 +62,8 @@ public class PreSaleController {
                                                     Authentication auth) {
         log.info("PreSaleController -> markAsBilled: {}", id);
         UserDto actor = (UserDto) auth.getPrincipal();
-        return ResponseEntity.ok(toDto(preSaleService.markAsBilled(id, body.getBillingId(), actor.getFullName())));
+        return ResponseEntity.ok(toDto(preSaleService.markAsBilled(
+                id, body.getBillingId(), body.getBillNumber(), actor.getFullName())));
     }
 
     @PatchMapping("/{id}/resend")
@@ -107,6 +108,7 @@ public class PreSaleController {
                 .finalizedAt(preSale.getFinalizedAt())
                 .billedAt(preSale.getBilledAt())
                 .billingId(preSale.getBillingId())
+                .billNumber(preSale.getBillNumber())
                 .cancelledBy(preSale.getCancelledBy())
                 .cancelledAt(preSale.getCancelledAt())
                 .billedBy(preSale.getBilledBy())

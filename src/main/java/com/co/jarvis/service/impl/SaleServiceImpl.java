@@ -86,6 +86,9 @@ public class SaleServiceImpl implements SaleService {
     private InventoryService inventoryService;
 
     @Autowired
+    private com.co.jarvis.repository.PreSaleRepository preSaleRepository;
+
+    @Autowired
     private ProductRepository productRepository;
 
     @Autowired
@@ -387,11 +390,83 @@ public class SaleServiceImpl implements SaleService {
 
             // Ejecutar la consulta y mapear los resultados a BillingDto
             List<Billing> results = mongoTemplate.find(query, Billing.class);
+            List<BillingDto> dtos = mapper.mapToDtoList(results);
 
-            return mapper.mapToDtoList(results);
+            // Enriquecer con info de preventa — cruzamos PreSale.billingId → BillingDto
+            enrichWithPreSaleInfo(dtos, dto.getHasPreSale());
+
+            return dtos;
         } catch (Exception e) {
             logger.error("SaleServiceImpl -> findAllBilling -> Error {}", e.getMessage());
             throw new GenericInternalException(e.getMessage());
+        }
+    }
+
+    /**
+     * Enriquece cada BillingDto con la información de sus preventas:
+     * - preSaleIds: lista de IDs de preventas que componen la factura
+     * - preSaleNumber: números legibles concatenados (ej: "PRV-0001, PRV-0002")
+     *
+     * Estrategia:
+     * 1. Si el Billing ya tiene preSaleIds guardados → usarlos directamente (datos nuevos)
+     * 2. Si no → cross-reference desde PreSale.billingId (retrocompatibilidad con datos históricos)
+     */
+    private void enrichWithPreSaleInfo(List<BillingDto> dtos, Boolean hasPreSaleFilter) {
+        // Cargar todas las preventas facturadas para cross-reference histórico
+        List<com.co.jarvis.entity.PreSale> billedPreSales =
+                preSaleRepository.findByBillingIdNotNull();
+
+        // Mapa: billingId → lista de PreSales (una factura puede tener varias preventas)
+        java.util.Map<String, List<com.co.jarvis.entity.PreSale>> billingToPreSales =
+                billedPreSales.stream()
+                        .filter(ps -> ps.getBillingId() != null)
+                        .collect(java.util.stream.Collectors.groupingBy(
+                                com.co.jarvis.entity.PreSale::getBillingId));
+
+        // Mapa: preSaleId → PreSale (para lookup por ID directo)
+        java.util.Map<String, com.co.jarvis.entity.PreSale> preSaleById =
+                billedPreSales.stream()
+                        .filter(ps -> ps.getId() != null)
+                        .collect(java.util.stream.Collectors.toMap(
+                                com.co.jarvis.entity.PreSale::getId,
+                                ps -> ps,
+                                (a, b) -> a));
+
+        dtos.forEach(dto -> {
+            List<com.co.jarvis.entity.PreSale> related;
+
+            if (dto.getPreSaleIds() != null && !dto.getPreSaleIds().isEmpty()) {
+                // Factura nueva: tiene los IDs guardados directamente
+                related = dto.getPreSaleIds().stream()
+                        .map(preSaleById::get)
+                        .filter(java.util.Objects::nonNull)
+                        .collect(java.util.stream.Collectors.toList());
+            } else {
+                // Factura histórica: buscar por cross-reference
+                related = billingToPreSales.getOrDefault(dto.getId(), java.util.List.of());
+                // Guardar los IDs para futuras consultas (migración implícita)
+                if (!related.isEmpty()) {
+                    dto.setPreSaleIds(related.stream()
+                            .map(com.co.jarvis.entity.PreSale::getId)
+                            .collect(java.util.stream.Collectors.toList()));
+                }
+            }
+
+            if (!related.isEmpty()) {
+                // Construir string legible con todos los números de preventa
+                String numbers = related.stream()
+                        .map(com.co.jarvis.entity.PreSale::getPreSaleNumber)
+                        .filter(java.util.Objects::nonNull)
+                        .collect(java.util.stream.Collectors.joining(", "));
+                dto.setPreSaleNumber(numbers.isEmpty() ? null : numbers);
+            }
+        });
+
+        // Aplicar filtro si viene especificado
+        if (hasPreSaleFilter != null) {
+            dtos.removeIf(dto -> hasPreSaleFilter
+                    ? dto.getPreSaleNumber() == null        // true → solo con preventa
+                    : dto.getPreSaleNumber() != null);      // false → solo sin preventa
         }
     }
 

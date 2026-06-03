@@ -29,6 +29,7 @@ public class CashCountSessionDto implements Serializable {
     private BigDecimal totalIncome;
     private BigDecimal totalExpense;
     private BigDecimal netCashFlow;
+    private BigDecimal closingBase;
     private ECashCountStatus status;
     private String notes;
     private String cancelReason;

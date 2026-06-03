@@ -34,6 +34,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
     private final ClientAccountRepository clientAccountRepository;
     private final CashLoanRepository cashLoanRepository;
     private final InternalTransferRepository internalTransferRepository;
+    private final ExpenseRepository expenseRepository;
     private final MongoTemplate mongoTemplate;
 
     // Denominaciones colombianas
@@ -124,10 +125,12 @@ public class CashRegisterServiceImpl implements CashRegisterService {
             return existing.get().getOpeningBalance();
         }
 
-        // 2) Si no, usar el efectivo contado del último arqueo cerrado (saldo sugerido)
+        // 2) Si no, usar closingBase del último arqueo cerrado (si existe), o totalCashCounted
         List<CashCountSession> closedSessions = cashCountSessionRepository.findLastClosedSession();
-        if (!closedSessions.isEmpty() && closedSessions.get(0).getTotalCashCounted() != null) {
-            return closedSessions.get(0).getTotalCashCounted();
+        if (!closedSessions.isEmpty()) {
+            CashCountSession last = closedSessions.get(0);
+            if (last.getClosingBase() != null) return last.getClosingBase();
+            if (last.getTotalCashCounted() != null) return last.getTotalCashCounted();
         }
 
         return BigDecimal.ZERO;
@@ -275,10 +278,30 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .action(EAuditAction.CIERRE)
                 .timestamp(LocalDateTime.now())
                 .build());
-        
+
         if (request.getNotes() != null && !request.getNotes().isEmpty()) {
             String existingNotes = session.getNotes() != null ? session.getNotes() + " | " : "";
             session.setNotes(existingNotes + "Cierre: " + request.getNotes());
+        }
+
+        // Lógica de fondo fijo: guardar closingBase para que sea el saldo sugerido mañana.
+        // El sistema NO crea transacciones automáticas — el operador es responsable de
+        // registrar qué pasó con el excedente (traslado a banco o retiro propietario)
+        // antes de cerrar, usando los endpoints correspondientes.
+        if (request.getClosingBase() != null) {
+            BigDecimal physical = session.getTotalCashCounted() != null
+                    ? session.getTotalCashCounted() : BigDecimal.ZERO;
+
+            if (physical.compareTo(request.getClosingBase()) >= 0) {
+                // Caso normal: hay suficiente efectivo para sostener el fondo fijo
+                session.setClosingBase(request.getClosingBase());
+                log.info("Fondo fijo al cierre: {}", request.getClosingBase());
+            } else {
+                // Caso borde: el físico es menor al fondo deseado — se guarda lo que hay
+                session.setClosingBase(physical);
+                log.warn("Físico ({}) menor al fondo fijo deseado ({}). closingBase ajustado a {}",
+                        physical, request.getClosingBase(), physical);
+            }
         }
 
         session = cashCountSessionRepository.save(session);
@@ -395,10 +418,76 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         }
 
         CashCountSession lastClosed = closedSessions.get(0);
+
+        // Si el último arqueo cerrado tiene un fondo fijo definido, ese es el saldo sugerido.
+        // Si no, se mantiene el comportamiento anterior: totalCashCounted.
+        BigDecimal suggestedBalance = lastClosed.getClosingBase() != null
+                ? lastClosed.getClosingBase()
+                : lastClosed.getTotalCashCounted();
+
         return SuggestedOpeningResponse.builder()
-                .balance(lastClosed.getTotalCashCounted())
+                .balance(suggestedBalance)
                 .lastCloseDate(lastClosed.getSessionDate())
                 .build();
+    }
+
+    @Override
+    public List<OwnerWithdrawalDto> listOwnerWithdrawals(LocalDate fromDate, LocalDate toDate) {
+        log.info("CashRegisterServiceImpl -> listOwnerWithdrawals: from={}, to={}", fromDate, toDate);
+
+        LocalDate from = fromDate != null ? fromDate : LocalDate.now().minusMonths(1);
+        LocalDate to   = toDate   != null ? toDate   : LocalDate.now();
+
+        OffsetDateTime start = from.atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime();
+        OffsetDateTime end   = to.atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime();
+
+        Query query = new Query(
+                Criteria.where("dateTimeRecord").gte(start).lte(end)
+                        .and("category").is(ETransactionCategory.RETIRO_PROPIETARIO.name())
+        );
+
+        return mongoTemplate.find(query, Expense.class).stream()
+                .map(e -> OwnerWithdrawalDto.builder()
+                        .id(e.getId())
+                        .amount(e.getAmount())
+                        .description(e.getDescription())
+                        .reference(e.getReference())
+                        .date(e.getDateTimeRecord().atZoneSameInstant(DateTimeUtil.getBogotaZone()).toLocalDate())
+                        .createdBy(e.getCreatedBy())
+                        .build())
+                .sorted(Comparator.comparing(OwnerWithdrawalDto::getDate).reversed())
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public String registerOwnerWithdrawal(RegisterOwnerWithdrawalRequest request, UserDto user) {
+        log.info("CashRegisterServiceImpl -> registerOwnerWithdrawal: amount={}, date={}",
+                request.getAmount(), request.getDate());
+
+        if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("El monto del retiro debe ser mayor a cero");
+        }
+
+        LocalDate date = request.getDate() != null ? request.getDate() : LocalDate.now();
+        String description = request.getDescription() != null && !request.getDescription().isBlank()
+                ? request.getDescription()
+                : "Retiro propietario";
+
+        Expense expense = Expense.builder()
+                .dateTimeRecord(date.atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime())
+                .amount(request.getAmount())
+                .paymentMethod(EPaymentMethod.EFECTIVO)
+                .category(ETransactionCategory.RETIRO_PROPIETARIO.name())
+                .description(description)
+                .reference(request.getReference())
+                .source("ARQUEO")
+                .createdBy(user != null ? user.getNumberIdentity() : "unknown")
+                .build();
+
+        Expense saved = expenseRepository.save(expense);
+        log.info("Retiro propietario registrado con ID: {}", saved.getId());
+        return saved.getId();
     }
 
     // ==================== Métodos privados ====================
@@ -841,6 +930,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .totalIncome(session.getTotalIncome())
                 .totalExpense(session.getTotalExpense())
                 .netCashFlow(session.getNetCashFlow())
+                .closingBase(session.getClosingBase())
                 .status(session.getStatus())
                 .notes(session.getNotes())
                 .cancelReason(session.getCancelReason())

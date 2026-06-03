@@ -178,6 +178,38 @@ public class CashRegisterController {
         return ResponseEntity.ok(response);
     }
 
+    /**
+     * GET /api/cash-register/owner-withdrawals?fromDate=&toDate=
+     * Lista los retiros de propietario en un rango de fechas.
+     */
+    @GetMapping("/owner-withdrawals")
+    public ResponseEntity<?> listOwnerWithdrawals(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
+        log.info("CashRegisterController -> listOwnerWithdrawals: from={}, to={}", fromDate, toDate);
+        return ResponseEntity.ok(cashRegisterService.listOwnerWithdrawals(fromDate, toDate));
+    }
+
+    /**
+     * POST /api/cash-register/owner-withdrawal
+     * Registra un retiro de propietario como egreso en efectivo del día.
+     * Se usa cuando el propietario se lleva el excedente de caja en mano
+     * (en lugar de consignarlo al banco). Esto reduce el esperado en caja
+     * y permite que el arqueo refleje correctamente lo que quedó.
+     */
+    @PostMapping(value = "/owner-withdrawal", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> registerOwnerWithdrawal(@RequestBody RegisterOwnerWithdrawalRequest request) {
+        log.info("CashRegisterController -> registerOwnerWithdrawal: amount={}", request.getAmount());
+        try {
+            UserDto user = getAuthenticatedUser();
+            String id = cashRegisterService.registerOwnerWithdrawal(request, user);
+            return ResponseEntity.ok(Map.of("id", id, "message", "Retiro de propietario registrado correctamente"));
+        } catch (RuntimeException e) {
+            log.error("Error registering owner withdrawal: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     private UserDto getAuthenticatedUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof UserDto user) {

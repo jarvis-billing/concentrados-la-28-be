@@ -49,6 +49,13 @@ public class CashCountSession {
     @Builder.Default
     private ECashCountStatus status = ECashCountStatus.EN_PROGRESO;  // Estado del arqueo
 
+    /**
+     * Fondo fijo que el operador decidió dejar al cierre.
+     * Se usa como saldo sugerido para la apertura del día siguiente.
+     * Si es null, se usa totalCashCounted (comportamiento anterior).
+     */
+    private BigDecimal closingBase;
+
     private String notes;                       // Notas del arqueo
     private String cancelReason;                // Razón de anulación (si aplica)
 

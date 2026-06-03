@@ -61,4 +61,16 @@ public interface CashRegisterService {
      * Útil para validar si hay dinero suficiente para un traslado a banco.
      */
     BigDecimal getCurrentCashBalance(LocalDate date);
+
+    /**
+     * Registra un retiro de propietario como egreso en efectivo.
+     * Este egreso queda visible en el arqueo del día, reduciendo el esperado en caja.
+     * Corresponde al botón "Retiro propietario" en el frontend al momento del cierre.
+     */
+    String registerOwnerWithdrawal(RegisterOwnerWithdrawalRequest request, UserDto user);
+
+    /**
+     * Lista los retiros de propietario en un rango de fechas.
+     */
+    List<OwnerWithdrawalDto> listOwnerWithdrawals(LocalDate fromDate, LocalDate toDate);
 }

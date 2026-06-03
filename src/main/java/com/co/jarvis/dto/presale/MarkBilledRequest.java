@@ -12,4 +12,6 @@ import lombok.NoArgsConstructor;
 public class MarkBilledRequest {
 
     private String billingId;
+    /** Número legible de la factura (ej: FAC-00123) para mostrarlo en la preventa */
+    private String billNumber;
 }

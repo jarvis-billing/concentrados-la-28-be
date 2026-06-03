@@ -40,5 +40,7 @@ public class Billing {
     private Boolean isReportInvoice;
     private EPaymentType saleType;
     private List<PaymentEntry> payments;
+    /** IDs de las preventas que componen esta factura (puede ser más de una) */
+    private List<String> preSaleIds;
 }
 

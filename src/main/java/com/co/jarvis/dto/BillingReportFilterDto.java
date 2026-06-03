@@ -33,6 +33,11 @@ public class BillingReportFilterDto {
 
     private String saleType;
 
+    /**
+     * null = sin filtro, true = solo facturas con preventa, false = solo sin preventa
+     */
+    private Boolean hasPreSale;
+
     public boolean hasFilterDate() {
         return toDate != null && fromDate != null;
     }

@@ -37,6 +37,8 @@ public class PreSale {
     private LocalDateTime finalizedAt;
     private LocalDateTime billedAt;
     private String billingId;
+    /** Número de factura legible (ej: FAC-00123) que facturó esta preventa */
+    private String billNumber;
     private String cancelledBy;
     private LocalDateTime cancelledAt;
     private String billedBy;

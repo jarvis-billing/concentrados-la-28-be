@@ -389,6 +389,7 @@ public class ProductServiceImpl implements ProductService {
             }
 
             Product product = mapper.mapToEntity(dto);
+            ensurePresentationIds(product);
             product = repository.save(product);
             return enrichProductDto(product);
         } catch (DuplicateRecordException e) {
@@ -450,39 +451,20 @@ public class ProductServiceImpl implements ProductService {
         product.setVatValue(dto.getVatValue());
         product.setVatType(dto.getVatType());
 
-        if (dto.getPresentations() != null && product.getPresentations() != null) {
-            for (Presentation dtoPres : dto.getPresentations()) {
-                if (dtoPres.getBarcode() == null) continue;
-                product.getPresentations().stream()
-                        .filter(dbPres -> dtoPres.getBarcode().equals(dbPres.getBarcode()))
-                        .findFirst()
-                        .ifPresent(dbPres -> {
-                            dbPres.setSalePrice(dtoPres.getSalePrice());
-                            dbPres.setCostPrice(dtoPres.getCostPrice());
-                            dbPres.setLabel(dtoPres.getLabel());
-                            dbPres.setUnitMeasure(dtoPres.getUnitMeasure());
-                            dbPres.setProductCode(dtoPres.getProductCode());
-                            dbPres.setFixedAmount(dtoPres.getFixedAmount());
-                            dbPres.setIsFixedAmount(dtoPres.getIsFixedAmount());
-                            dbPres.setIsBulk(dtoPres.getIsBulk());
-                            
-                            log.info("Presentación {} actualizada: salePrice={}, costPrice={}, label={} | fixedAmount={} (protegido)",
-                                    dbPres.getBarcode(), dbPres.getSalePrice(), dbPres.getCostPrice(),
-                                    dbPres.getLabel(), dbPres.getFixedAmount());
-                        });
-            }
-
-            // Agregar presentaciones nuevas (las que no existen en la DB)
-            for (Presentation dtoPres : dto.getPresentations()) {
-                if (dtoPres.getBarcode() == null) continue;
-                boolean existsInDb = product.getPresentations().stream()
-                        .anyMatch(dbPres -> dtoPres.getBarcode().equals(dbPres.getBarcode()));
-                if (!existsInDb) {
-                    product.getPresentations().add(dtoPres);
-                    log.info("Nueva presentación agregada: barcode={}, fixedAmount={}, isFixedAmount={}, isBulk={}",
-                            dtoPres.getBarcode(), dtoPres.getFixedAmount(), dtoPres.getIsFixedAmount(), dtoPres.getIsBulk());
+        if (dto.getPresentations() != null) {
+            // Reemplazar el array completo de presentaciones.
+            // Garantizar que cada presentación tenga un ID único antes de guardar.
+            java.util.List<com.co.jarvis.entity.Presentation> presentations =
+                    new java.util.ArrayList<>(dto.getPresentations());
+            presentations.forEach(p -> {
+                if (p.getId() == null || p.getId().isBlank()) {
+                    p.setId(java.util.UUID.randomUUID().toString());
                 }
-            }
+            });
+            product.setPresentations(presentations);
+            log.info("Presentaciones reemplazadas: {} en total", presentations.size());
+            presentations.forEach(p ->
+                    log.info("  -> id={}, barcode={}, label={}", p.getId(), p.getBarcode(), p.getLabel()));
         }
 
         product = repository.save(product);
@@ -498,6 +480,57 @@ public class ProductServiceImpl implements ProductService {
     /**
      * Enriquece un ProductDto con el displayStock calculado
      */
+    @Override
+    public com.co.jarvis.dto.ProductDto updatePresentation(
+            String productId, String presentationId, com.co.jarvis.entity.Presentation patch) {
+
+        log.info("ProductServiceImpl -> updatePresentation: productId={}, presentationId={}",
+                productId, presentationId);
+
+        Product product = repository.findById(productId)
+                .orElseThrow(() -> new com.co.jarvis.util.exception.ResourceNotFoundException(
+                        "Producto no encontrado: " + productId));
+
+        com.co.jarvis.entity.Presentation target = product.getPresentations() == null ? null
+                : product.getPresentations().stream()
+                        .filter(p -> presentationId.equals(p.getId()))
+                        .findFirst()
+                        .orElse(null);
+
+        if (target == null) {
+            throw new com.co.jarvis.util.exception.ResourceNotFoundException(
+                    "Presentación no encontrada: " + presentationId);
+        }
+
+        // Actualizar todos los campos enviados (null-safe: solo sobreescribe si vienen con valor)
+        if (patch.getBarcode()      != null) target.setBarcode(patch.getBarcode());
+        if (patch.getLabel()        != null) target.setLabel(patch.getLabel());
+        if (patch.getSalePrice()    != null) target.setSalePrice(patch.getSalePrice());
+        if (patch.getCostPrice()    != null) target.setCostPrice(patch.getCostPrice());
+        if (patch.getUnitMeasure()  != null) target.setUnitMeasure(patch.getUnitMeasure());
+        if (patch.getProductCode()  != null) target.setProductCode(patch.getProductCode());
+        if (patch.getIsBulk()       != null) target.setIsBulk(patch.getIsBulk());
+        if (patch.getIsFixedAmount()!= null) target.setIsFixedAmount(patch.getIsFixedAmount());
+        if (patch.getFixedAmount()  != null) target.setFixedAmount(patch.getFixedAmount());
+
+        log.info("Presentación {} actualizada: barcode={}, label={}, salePrice={}",
+                presentationId, target.getBarcode(), target.getLabel(), target.getSalePrice());
+
+        product = repository.save(product);
+        return enrichProductDto(product);
+    }
+
+    /** Garantiza que cada presentación tenga un ID único antes de persistir. */
+    private void ensurePresentationIds(Product product) {
+        if (product.getPresentations() != null) {
+            product.getPresentations().forEach(p -> {
+                if (p.getId() == null || p.getId().isBlank()) {
+                    p.setId(java.util.UUID.randomUUID().toString());
+                }
+            });
+        }
+    }
+
     private ProductDto enrichProductDto(Product product) {
         ProductDto dto = mapper.mapToDto(product);
         dto.setDisplayStock(computeDisplayStock(product));

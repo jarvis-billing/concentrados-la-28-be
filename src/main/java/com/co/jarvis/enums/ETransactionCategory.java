@@ -8,5 +8,6 @@ public enum ETransactionCategory {
     GASTO,
     PAGO_PROVEEDOR,
     AJUSTE,
-    TRASLADO_BANCO
+    TRASLADO_BANCO,
+    RETIRO_PROPIETARIO
 }
