@@ -177,25 +177,48 @@ public class ClientAccountServiceImpl implements ClientAccountService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Filtra cuentas por rango de fechas basándose en actividad real:
+     * - Si la cuenta tiene pagos, se incluye si algún pago cae dentro del rango
+     * - Si la cuenta no tiene pagos pero tiene deuda, se incluye si fue creada dentro del rango
+     * El filtro de fecha NO excluye cuentas con saldo pendiente y sin pagos recientes
+     * (esas se muestran siempre para no perder deudas de vista).
+     */
     private boolean filterByDateRange(ClientAccount account, AccountReportFilter filter) {
         if (filter.getFromDate() == null && filter.getToDate() == null) {
             return true;
         }
 
-        LocalDateTime createdAt = account.getCreatedAt();
-        if (createdAt == null) {
+        LocalDateTime from = filter.getFromDate() != null ? filter.getFromDate().atStartOfDay() : null;
+        LocalDateTime to   = filter.getToDate()   != null ? filter.getToDate().atTime(LocalTime.MAX) : null;
+
+        // Si tiene pagos, verificar si alguno cae en el rango
+        if (account.getPayments() != null && !account.getPayments().isEmpty()) {
+            boolean hasPaymentInRange = account.getPayments().stream()
+                    .filter(p -> p.getPaymentDate() != null)
+                    .anyMatch(p -> {
+                        LocalDateTime pd = p.getPaymentDate();
+                        return (from == null || !pd.isBefore(from))
+                            && (to   == null || !pd.isAfter(to));
+                    });
+            if (hasPaymentInRange) return true;
+        }
+
+        // Si tiene saldo pendiente y no tiene pagos, incluir siempre (deuda sin abonar)
+        if (account.getCurrentBalance() != null
+                && account.getCurrentBalance().compareTo(java.math.BigDecimal.ZERO) > 0
+                && (account.getPayments() == null || account.getPayments().isEmpty())) {
             return true;
         }
 
-        if (filter.getFromDate() != null && createdAt.isBefore(filter.getFromDate().atStartOfDay())) {
-            return false;
+        // Verificar por fecha de creación de la cuenta
+        LocalDateTime createdAt = account.getCreatedAt();
+        if (createdAt != null) {
+            return (from == null || !createdAt.isBefore(from))
+                && (to   == null || !createdAt.isAfter(to));
         }
 
-        if (filter.getToDate() != null && createdAt.isAfter(filter.getToDate().atTime(LocalTime.MAX))) {
-            return false;
-        }
-
-        return true;
+        return false;
     }
 
     private AccountSummary mapToAccountSummary(ClientAccount account) {
@@ -208,6 +231,41 @@ public class ClientAccountServiceImpl implements ClientAccountService {
         String clientName = client != null ? client.getFullName() : "N/A";
         String clientIdNumber = client != null ? client.getIdNumber() : "N/A";
 
+        // Calcular historial de pagos con saldo antes/después de cada abono.
+        // Los pagos se ordenan por fecha ascendente para calcular el balance corrido.
+        List<AccountSummary.PaymentWithBalance> paymentsWithBalance = new ArrayList<>();
+        if (account.getPayments() != null && !account.getPayments().isEmpty()) {
+            List<AccountPayment> sorted = account.getPayments().stream()
+                    .filter(p -> p.getPaymentDate() != null)
+                    .sorted(java.util.Comparator.comparing(AccountPayment::getPaymentDate))
+                    .collect(Collectors.toList());
+
+            // Reconstruir el saldo corrido desde la deuda total hacia atrás
+            java.math.BigDecimal runningBalance = account.getTotalDebt() != null
+                    ? account.getTotalDebt() : java.math.BigDecimal.ZERO;
+
+            for (AccountPayment payment : sorted) {
+                java.math.BigDecimal amount = payment.getAmount() != null
+                        ? payment.getAmount() : java.math.BigDecimal.ZERO;
+                java.math.BigDecimal before = runningBalance;
+                java.math.BigDecimal after  = runningBalance.subtract(amount);
+                runningBalance = after;
+
+                paymentsWithBalance.add(AccountSummary.PaymentWithBalance.builder()
+                        .id(payment.getId())
+                        .amount(amount)
+                        .paymentMethod(payment.getPaymentMethod() != null
+                                ? payment.getPaymentMethod().name() : null)
+                        .reference(payment.getReference())
+                        .notes(payment.getNotes())
+                        .paymentDate(payment.getPaymentDate())
+                        .createdBy(payment.getCreatedBy())
+                        .balanceBefore(before)
+                        .balanceAfter(after)
+                        .build());
+            }
+        }
+
         return AccountSummary.builder()
                 .clientId(account.getClientId())
                 .clientName(clientName)
@@ -217,6 +275,7 @@ public class ClientAccountServiceImpl implements ClientAccountService {
                 .currentBalance(account.getCurrentBalance())
                 .lastPaymentDate(account.getLastPaymentDate())
                 .daysSinceLastPayment(daysSinceLastPayment)
+                .payments(paymentsWithBalance)
                 .build();
     }
 
