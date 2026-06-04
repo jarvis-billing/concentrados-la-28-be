@@ -41,5 +41,11 @@ public class Presentation {
     private Boolean isFixedAmount;
     @Field("fixed_amount")
     private BigDecimal fixedAmount;
+    /**
+     * Tipo de embalaje físico de la presentación (ROLLO, BULTO, CAJA, GALON, etc.).
+     * Depende del tipo de venta del producto y ayuda a generar la etiqueta de impresión.
+     */
+    @Field("package_type")
+    private String packageType;
 
 }
