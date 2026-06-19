@@ -77,6 +77,12 @@ public class MerchandiseReturnServiceImpl implements MerchandiseReturnService {
         MerchandiseReturn returnEntity = buildReturnEntity(dto, EReturnType.DEVOLUCION_VENTA, userId);
         returnEntity = returnRepository.save(returnEntity);
 
+        // Marcar la factura original con la referencia de esta devolución
+        billing.setHasReturn(true);
+        if (billing.getReturnIds() == null) billing.setReturnIds(new ArrayList<>());
+        billing.getReturnIds().add(returnEntity.getId());
+        billingRepository.save(billing);
+
         // Ajustar stock: incrementar (los productos vuelven al inventario)
         updateStockForSaleReturn(dto.getItems(), returnEntity.getId(), userId);
 

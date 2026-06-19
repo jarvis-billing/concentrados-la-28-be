@@ -35,6 +35,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
     private final CashLoanRepository cashLoanRepository;
     private final InternalTransferRepository internalTransferRepository;
     private final ExpenseRepository expenseRepository;
+    private final MerchandiseReturnRepository merchandiseReturnRepository;
     private final MongoTemplate mongoTemplate;
 
     // Denominaciones colombianas
@@ -84,6 +85,9 @@ public class CashRegisterServiceImpl implements CashRegisterService {
 
         // 7. Obtener traslados de efectivo a banco del día (salidas justificadas)
         transactions.addAll(getInternalTransferTransactions(date));
+
+        // 8. Obtener devoluciones de venta con reembolso en efectivo
+        transactions.addAll(getSaleReturnTransactions(date));
 
         // Calcular totales — todas las transacciones son solo EFECTIVO
         BigDecimal totalIncome = transactions.stream()
@@ -676,6 +680,49 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                     }
                 }
             }
+        }
+
+        return transactions;
+    }
+
+    private List<CashTransactionDto> getSaleReturnTransactions(LocalDate date) {
+        List<CashTransactionDto> transactions = new ArrayList<>();
+
+        OffsetDateTime startOfDay = date.atStartOfDay().atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime();
+        OffsetDateTime endOfDay = date.atTime(LocalTime.MAX).atZone(DateTimeUtil.getBogotaZone()).toOffsetDateTime();
+
+        List<MerchandiseReturn> returns = merchandiseReturnRepository
+                .findByReturnDateBetweenOrderByReturnDateDesc(startOfDay, endOfDay);
+
+        for (MerchandiseReturn ret : returns) {
+            // Solo devoluciones de venta procesadas (no anuladas)
+            if (ret.getReturnType() != EReturnType.DEVOLUCION_VENTA) continue;
+            if (ret.getStatus() == EReturnStatus.ANULADA) continue;
+            if (ret.getResolution() == null) continue;
+
+            // Solo las resoluciones que implican efectivo saliendo de la caja
+            boolean hasCashOut = ret.getResolution() == EReturnResolution.REEMBOLSO_EFECTIVO
+                    || ret.getResolution() == EReturnResolution.CAMBIO_PRODUCTO;
+            if (!hasCashOut) continue;
+
+            BigDecimal cashOut = ret.getCashRefundAmount() != null ? ret.getCashRefundAmount() : BigDecimal.ZERO;
+            if (cashOut.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            String clientName = ret.getClientName() != null ? ret.getClientName() : "Cliente";
+            String desc = "Devolución venta " + ret.getReturnNumber() + " - " + clientName;
+
+            transactions.add(CashTransactionDto.builder()
+                    .id(ret.getId())
+                    .type(ETransactionType.EGRESO)
+                    .category(ETransactionCategory.DEVOLUCION_VENTA)
+                    .description(desc)
+                    .amount(cashOut)
+                    .paymentMethod(EPaymentMethod.EFECTIVO)
+                    .reference(ret.getOriginalDocumentNumber())
+                    .transactionDate(ret.getReturnDate()
+                            .atZoneSameInstant(DateTimeUtil.getBogotaZone()).toLocalDateTime())
+                    .relatedDocumentId(ret.getId())
+                    .build());
         }
 
         return transactions;

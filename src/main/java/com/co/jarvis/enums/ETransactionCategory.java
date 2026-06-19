@@ -5,6 +5,7 @@ public enum ETransactionCategory {
     PAGO_CREDITO,
     DEPOSITO_ANTICIPO,
     DEVOLUCION_ANTICIPO,
+    DEVOLUCION_VENTA,
     GASTO,
     PAGO_PROVEEDOR,
     AJUSTE,

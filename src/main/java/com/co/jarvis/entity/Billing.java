@@ -42,5 +42,9 @@ public class Billing {
     private List<PaymentEntry> payments;
     /** IDs de las preventas que componen esta factura (puede ser más de una) */
     private List<String> preSaleIds;
+    /** Indica si la factura tiene al menos una devolución registrada */
+    private Boolean hasReturn;
+    /** IDs de las devoluciones asociadas a esta factura */
+    private List<String> returnIds;
 }
 
