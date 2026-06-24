@@ -53,7 +53,10 @@ public class PreSaleController {
     public ResponseEntity<PreSaleDto> cancel(@PathVariable String id, Authentication auth) {
         log.info("PreSaleController -> cancel: {}", id);
         UserDto actor = (UserDto) auth.getPrincipal();
-        return ResponseEntity.ok(toDto(preSaleService.cancel(id, actor.getFullName())));
+        PreSale cancelled = preSaleService.cancel(id, actor.getFullName());
+        // Notificar a todos los facturadores que esta preventa fue cancelada
+        webSocketHandler.broadcast(new WsMessage<>("PREVENTA_CANCELLED", toNotification(cancelled)));
+        return ResponseEntity.ok(toDto(cancelled));
     }
 
     @PatchMapping("/{id}/billed")
@@ -62,8 +65,11 @@ public class PreSaleController {
                                                     Authentication auth) {
         log.info("PreSaleController -> markAsBilled: {}", id);
         UserDto actor = (UserDto) auth.getPrincipal();
-        return ResponseEntity.ok(toDto(preSaleService.markAsBilled(
-                id, body.getBillingId(), body.getBillNumber(), actor.getFullName())));
+        PreSale billed = preSaleService.markAsBilled(
+                id, body.getBillingId(), body.getBillNumber(), actor.getFullName());
+        // Notificar a todos los facturadores que esta preventa fue facturada
+        webSocketHandler.broadcast(new WsMessage<>("PREVENTA_BILLED", toNotification(billed)));
+        return ResponseEntity.ok(toDto(billed));
     }
 
     @PatchMapping("/{id}/resend")
@@ -100,6 +106,7 @@ public class PreSaleController {
                 .preSaleNumber(preSale.getPreSaleNumber())
                 .status(preSale.getStatus() != null ? preSale.getStatus().name() : null)
                 .sellerName(preSale.getSellerName())
+                .clientName(preSale.getClientName())
                 .items(itemDtos)
                 .totalAmount(preSale.getTotalAmount())
                 .notes(preSale.getNotes())
@@ -120,6 +127,7 @@ public class PreSaleController {
                 .preSaleId(preSale.getId())
                 .preSaleNumber(preSale.getPreSaleNumber())
                 .sellerName(preSale.getSellerName())
+                .clientName(preSale.getClientName())
                 .totalAmount(preSale.getTotalAmount())
                 .itemCount(preSale.getItems() != null ? preSale.getItems().size() : 0)
                 .createdAt(preSale.getCreatedAt())

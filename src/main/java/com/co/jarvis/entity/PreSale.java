@@ -29,6 +29,8 @@ public class PreSale {
 
     private PreSaleStatus status;
     private String sellerName;
+    /** Nombre del cliente capturado por el vendedor al crear la preventa (opcional) */
+    private String clientName;
     private List<PreSaleItem> items;
     private double totalAmount;
     private String notes;

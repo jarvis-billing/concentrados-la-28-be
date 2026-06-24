@@ -43,6 +43,7 @@ public class PreSaleServiceImpl implements PreSaleService {
                 .preSaleNumber(generateNumber())
                 .status(PreSaleStatus.PENDING)
                 .sellerName(request.getSellerName())
+                .clientName(request.getClientName())
                 .items(mapItems(request))
                 .totalAmount(request.getTotalAmount())
                 .notes(request.getNotes())

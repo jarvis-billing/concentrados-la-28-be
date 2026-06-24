@@ -18,6 +18,7 @@ public class PreSaleDto {
     private String preSaleNumber;
     private String status;
     private String sellerName;
+    private String clientName;
     private List<PreSaleItemDto> items;
     private double totalAmount;
     private String notes;
