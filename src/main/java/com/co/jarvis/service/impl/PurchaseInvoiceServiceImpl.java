@@ -682,37 +682,45 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
 
         for (PurchaseInvoice invoice : invoices) {
             for (PurchaseInvoiceItem item : invoice.getItems()) {
-                if (presentationId.equals(item.getPresentationBarcode())
-                        && item.getUnitTotalCost() != null) {
+                if (!presentationId.equals(item.getPresentationBarcode())) continue;
 
-                    BigDecimal vatPerUnit = item.getVatAmount() != null
-                            && item.getQuantity() != null
-                            && item.getQuantity().compareTo(BigDecimal.ZERO) > 0
-                        ? item.getVatAmount().divide(item.getQuantity(), 2, RoundingMode.HALF_UP)
-                        : BigDecimal.ZERO;
+                // Fallback: facturas antiguas pueden no tener unitTotalCost calculado
+                BigDecimal effectiveUnitCost = item.getUnitCost() != null
+                        ? item.getUnitCost() : BigDecimal.ZERO;
+                BigDecimal effectiveUnitTotalCost = item.getUnitTotalCost() != null
+                        ? item.getUnitTotalCost() : effectiveUnitCost;
 
-                    BigDecimal freightPerUnit = item.getFreightAmount() != null
-                            && item.getQuantity() != null
-                            && item.getQuantity().compareTo(BigDecimal.ZERO) > 0
-                        ? item.getFreightAmount().divide(item.getQuantity(), 2, RoundingMode.HALF_UP)
-                        : BigDecimal.ZERO;
+                // Ignorar ítems sin ningún costo registrado
+                if (effectiveUnitCost.compareTo(BigDecimal.ZERO) == 0
+                        && effectiveUnitTotalCost.compareTo(BigDecimal.ZERO) == 0) continue;
 
-                    return PurchaseLastCostInfo.builder()
-                            .presentationId(presentationId)
-                            .presentationBarcode(item.getPresentationBarcode())
-                            .productDescription(item.getDescription())
-                            .lastUnitCost(item.getUnitCost())
-                            .lastVatRate(item.getVatRate())
-                            .lastVatPerUnit(vatPerUnit)
-                            .lastFreightPerUnit(freightPerUnit)
-                            .lastUnitTotalCost(item.getUnitTotalCost())
-                            .lastInvoiceId(invoice.getId())
-                            .lastInvoiceNumber(invoice.getInvoiceNumber())
-                            .lastInvoiceDate(invoice.getInvoiceDate())
-                            .lastSupplierId(invoice.getSupplier() != null ? invoice.getSupplier().getId() : null)
-                            .lastSupplierName(invoice.getSupplier() != null ? invoice.getSupplier().getName() : null)
-                            .build();
-                }
+                BigDecimal vatPerUnit = item.getVatAmount() != null
+                        && item.getQuantity() != null
+                        && item.getQuantity().compareTo(BigDecimal.ZERO) > 0
+                    ? item.getVatAmount().divide(item.getQuantity(), 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+
+                BigDecimal freightPerUnit = item.getFreightAmount() != null
+                        && item.getQuantity() != null
+                        && item.getQuantity().compareTo(BigDecimal.ZERO) > 0
+                    ? item.getFreightAmount().divide(item.getQuantity(), 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+
+                return PurchaseLastCostInfo.builder()
+                        .presentationId(presentationId)
+                        .presentationBarcode(item.getPresentationBarcode())
+                        .productDescription(item.getDescription())
+                        .lastUnitCost(effectiveUnitCost)
+                        .lastVatRate(item.getVatRate())
+                        .lastVatPerUnit(vatPerUnit)
+                        .lastFreightPerUnit(freightPerUnit)
+                        .lastUnitTotalCost(effectiveUnitTotalCost)
+                        .lastInvoiceId(invoice.getId())
+                        .lastInvoiceNumber(invoice.getInvoiceNumber())
+                        .lastInvoiceDate(invoice.getInvoiceDate())
+                        .lastSupplierId(invoice.getSupplier() != null ? invoice.getSupplier().getId() : null)
+                        .lastSupplierName(invoice.getSupplier() != null ? invoice.getSupplier().getName() : null)
+                        .build();
             }
         }
         log.info("getLastCost -> No se encontró historial de costo para presentationId={}", presentationId);

@@ -20,6 +20,8 @@ public interface PurchaseInvoiceRepository extends MongoRepository<PurchaseInvoi
     @Query("{ 'date': { $gte: ?0, $lte: ?1 } }")
     List<PurchaseInvoice> findByDateBetween(OffsetDateTime dateFrom, OffsetDateTime dateTo);
 
-    @Query("{ 'items': { $elemMatch: { 'presentationBarcode': ?0, 'unitTotalCost': { $ne: null } } } }")
+    // Sin filtro en unitTotalCost: incluye facturas antiguas donde ese campo no estaba calculado.
+    // El service aplica fallback a unitCost cuando unitTotalCost es null.
+    @Query("{ 'items.presentationBarcode': ?0 }")
     List<PurchaseInvoice> findByItemPresentationBarcodeWithCost(String presentationBarcode, Sort sort);
 }
