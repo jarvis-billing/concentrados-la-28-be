@@ -30,6 +30,7 @@ import org.springframework.data.mongodb.core.aggregation.Aggregation;
 import org.springframework.data.mongodb.core.aggregation.AggregationOperation;
 import org.springframework.data.mongodb.core.aggregation.AggregationResults;
 import org.springframework.data.mongodb.core.query.Criteria;
+import org.bson.types.Decimal128;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -851,6 +852,7 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             @SuppressWarnings("unchecked")
             Map<String, Object> map = doc;
             String barcode = (String) map.get("barcode");
+           
             if (barcode != null) {
                 BigDecimal unitCost = getDecimal(map.get("unitCost"));
                 BigDecimal vatRate = getDecimal(map.get("vatRate"));
@@ -865,6 +867,12 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
                 BigDecimal freightPerUnit = (freightAmount != null && quantity != null && quantity.compareTo(BigDecimal.ZERO) > 0)
                     ? freightAmount.divide(quantity, 2, RoundingMode.HALF_UP)
                     : BigDecimal.ZERO;
+
+                // Fallback: si unitTotalCost no fue guardado, recalcular desde componentes
+                if (unitTotalCost == null || unitTotalCost.compareTo(BigDecimal.ZERO) == 0) {
+                    BigDecimal base = unitCost != null ? unitCost : BigDecimal.ZERO;
+                    unitTotalCost = base.add(vatPerUnit).add(freightPerUnit);
+                }
 
                 LocalDate invoiceDate = (LocalDate) map.get("invoiceDate");
                 String invoiceDateStr = invoiceDate != null ? invoiceDate.toString() : null;
@@ -938,9 +946,15 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
     private BigDecimal getDecimal(Object value) {
         if (value == null) return null;
         if (value instanceof BigDecimal) return (BigDecimal) value;
+        // MongoDB devuelve Decimal128 para campos BigDecimal en agregaciones
+        if (value instanceof Decimal128) return ((Decimal128) value).bigDecimalValue();
         if (value instanceof Double) return BigDecimal.valueOf((Double) value);
         if (value instanceof Integer) return BigDecimal.valueOf((Integer) value);
         if (value instanceof Long) return BigDecimal.valueOf((Long) value);
+        // Números almacenados como String en MongoDB
+        if (value instanceof String) {
+            try { return new BigDecimal((String) value); } catch (NumberFormatException e) { return null; }
+        }
         return null;
     }
 }
