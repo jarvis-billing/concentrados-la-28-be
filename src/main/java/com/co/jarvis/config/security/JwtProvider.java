@@ -1,6 +1,8 @@
 package com.co.jarvis.config.security;
 
 import com.co.jarvis.dto.UserDto;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -71,6 +73,26 @@ public class JwtProvider {
     }
 
     public UserDto getTokenUser(String token) {
-        return listTokens.get(token);
+        // Fast path: token was generated in this JVM session
+        UserDto cached = listTokens.get(token);
+        if (cached != null) return cached;
+
+        // Fallback: parse UserDto directly from JWT claims.
+        // This handles dyno restarts where the in-memory map is cleared
+        // but the JWT itself still carries the full UserDto payload.
+        try {
+            String numberIdentity = extractUsername(token);
+            Claims claims = extractAllClaims(token);
+            Object claimObj = claims.get(numberIdentity);
+            if (claimObj == null) return null;
+
+            ObjectMapper mapper = new ObjectMapper()
+                    .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+            UserDto user = mapper.convertValue(claimObj, UserDto.class);
+            listTokens.put(token, user); // cache for subsequent requests
+            return user;
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
