@@ -2,6 +2,7 @@ package com.co.jarvis.service.impl;
 
 import com.co.jarvis.dto.BulkLastCostItem;
 import com.co.jarvis.dto.CostSource;
+import com.co.jarvis.dto.PagedResponse;
 import com.co.jarvis.dto.PurchaseFilterDto;
 import com.co.jarvis.dto.CostHistoryEntry;
 import com.co.jarvis.dto.PurchaseInvoiceDto;
@@ -24,6 +25,9 @@ import com.co.jarvis.util.mensajes.MessageConstants;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -39,6 +43,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -97,6 +102,79 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             log.error("PurchaseInvoiceServiceImpl -> list -> ERROR: {}", e.getMessage());
             throw new SaveRecordException("Error al listar facturas de compra");
         }
+    }
+
+    @Override
+    public PagedResponse<PurchaseInvoiceDto> listPaged(PurchaseFilterDto filter, Pageable pageable) {
+        log.info("PurchaseInvoiceServiceImpl -> listPaged: page={}, size={}", pageable.getPageNumber(), pageable.getPageSize());
+        try {
+            Query query = buildFilterQuery(filter);
+
+            // Contar total sin paginación
+            long total = mongoTemplate.count(Query.of(query).limit(-1).skip(-1), PurchaseInvoice.class);
+
+            // Aplicar paginación y orden por fecha de ingreso descendente
+            query.with(pageable);
+            if (!pageable.getSort().isSorted()) {
+                query.with(Sort.by(Sort.Direction.DESC, "created_at"));
+            }
+
+            List<PurchaseInvoice> invoices = mongoTemplate.find(query, PurchaseInvoice.class);
+
+            List<PurchaseInvoiceDto> dtos = invoices.stream()
+                    .map(mapper::mapToDto)
+                    .collect(Collectors.toList());
+
+            Page<PurchaseInvoiceDto> page = new PageImpl<>(dtos, pageable, total);
+            return PagedResponse.of(page);
+
+        } catch (Exception e) {
+            log.error("PurchaseInvoiceServiceImpl -> listPaged -> ERROR: {}", e.getMessage());
+            throw new SaveRecordException("Error al listar facturas de compra");
+        }
+    }
+
+    /**
+     * Construye el Query de MongoDB aplicando los filtros del DTO.
+     */
+    private Query buildFilterQuery(PurchaseFilterDto filter) {
+        Query query = new Query();
+        if (filter == null) return query;
+
+        List<Criteria> criteria = new ArrayList<>();
+
+        // Filtro por fecha de ingreso (created_at)
+        if (filter.getCreatedAtFrom() != null || filter.getCreatedAtTo() != null) {
+            Criteria dateCriteria = Criteria.where("created_at");
+            if (filter.getCreatedAtFrom() != null) {
+                dateCriteria = dateCriteria.gte(filter.getCreatedAtFrom().atStartOfDay().atOffset(ZoneOffset.UTC));
+            }
+            if (filter.getCreatedAtTo() != null) {
+                dateCriteria = dateCriteria.lte(filter.getCreatedAtTo().atTime(23, 59, 59).atOffset(ZoneOffset.UTC));
+            }
+            criteria.add(dateCriteria);
+        }
+
+        // Filtro por proveedor
+        if (filter.getSupplier() != null && filter.getSupplier().getId() != null) {
+            criteria.add(Criteria.where("supplier.id").is(filter.getSupplier().getId()));
+        }
+
+        // Filtro por código de barras de presentación en ítems
+        if (filter.getProductBarcode() != null && !filter.getProductBarcode().isBlank()) {
+            criteria.add(Criteria.where("items.presentationBarcode").is(filter.getProductBarcode()));
+        }
+
+        // Filtro por número de factura
+        if (filter.getInvoiceNumber() != null && !filter.getInvoiceNumber().isBlank()) {
+            criteria.add(Criteria.where("invoice_number").regex(filter.getInvoiceNumber(), "i"));
+        }
+
+        if (!criteria.isEmpty()) {
+            query.addCriteria(new Criteria().andOperator(criteria.toArray(new Criteria[0])));
+        }
+
+        return query;
     }
 
     @Override

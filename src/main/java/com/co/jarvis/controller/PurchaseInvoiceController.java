@@ -5,6 +5,7 @@ import com.co.jarvis.dto.BulkLastCostItem;
 import com.co.jarvis.dto.BulkLastCostRequest;
 import com.co.jarvis.dto.CostHistoryEntry;
 import com.co.jarvis.dto.LinkPaymentsRequest;
+import com.co.jarvis.dto.PagedResponse;
 import com.co.jarvis.dto.PurchaseFilterDto;
 import com.co.jarvis.dto.PurchaseInvoiceDto;
 import com.co.jarvis.dto.PurchaseLastCostInfo;
@@ -16,6 +17,8 @@ import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -39,45 +42,49 @@ public class PurchaseInvoiceController {
 
     /**
      * GET /api/purchases/invoices
-     * Lista todas las facturas de compra con filtros opcionales
+     * Lista facturas de compra con filtros y paginación server-side.
+     *
+     * @param createdAtFrom  fecha inicio ingreso (yyyy-MM-dd)
+     * @param createdAtTo    fecha fin ingreso   (yyyy-MM-dd)
+     * @param supplierId     ID del proveedor
+     * @param productBarcode código de barras de presentación en los ítems
+     * @param invoiceNumber  número de factura (búsqueda parcial)
+     * @param page           página (0-indexed, default 0)
+     * @param size           tamaño de página (default 20)
      */
     @GetMapping
-    public ResponseEntity<List<PurchaseInvoiceDto>> list(
-        @RequestParam(required = false) String dateFrom,
-        @RequestParam(required = false) String dateTo,
+    public ResponseEntity<PagedResponse<PurchaseInvoiceDto>> list(
+        @RequestParam(required = false) String createdAtFrom,
+        @RequestParam(required = false) String createdAtTo,
         @RequestParam(required = false) String supplierId,
-        @RequestParam(required = false) String supplierName,
-        @RequestParam(required = false) String invoiceNumber
+        @RequestParam(required = false) String productBarcode,
+        @RequestParam(required = false) String invoiceNumber,
+        @RequestParam(defaultValue = "0")  int page,
+        @RequestParam(defaultValue = "20") int size
     ) {
-        logger.info("PurchaseInvoiceController -> list");
-        
-        SupplierRefDto supplierRef = (supplierId != null || supplierName != null) 
-            ? SupplierRefDto.builder().id(supplierId).name(supplierName).build() 
-            : null;
-        
+        logger.info("PurchaseInvoiceController -> list: page={}, size={}", page, size);
+
+        SupplierRefDto supplierRef = supplierId != null
+                ? SupplierRefDto.builder().id(supplierId).build()
+                : null;
+
         PurchaseFilterDto filter = PurchaseFilterDto.builder()
-            .supplier(supplierRef)
-            .invoiceNumber(invoiceNumber)
-            .build();
-        
-        // Parse dates if provided
-        if (dateFrom != null) {
-            try {
-                filter.setDateFrom(java.time.OffsetDateTime.parse(dateFrom));
-            } catch (Exception e) {
-                logger.warn("Invalid dateFrom format: {}", dateFrom);
-            }
+                .supplier(supplierRef)
+                .invoiceNumber(invoiceNumber)
+                .productBarcode(productBarcode)
+                .build();
+
+        if (createdAtFrom != null && !createdAtFrom.isBlank()) {
+            try { filter.setCreatedAtFrom(LocalDate.parse(createdAtFrom)); }
+            catch (DateTimeParseException e) { logger.warn("Invalid createdAtFrom: {}", createdAtFrom); }
         }
-        if (dateTo != null) {
-            try {
-                filter.setDateTo(java.time.OffsetDateTime.parse(dateTo));
-            } catch (Exception e) {
-                logger.warn("Invalid dateTo format: {}", dateTo);
-            }
+        if (createdAtTo != null && !createdAtTo.isBlank()) {
+            try { filter.setCreatedAtTo(LocalDate.parse(createdAtTo)); }
+            catch (DateTimeParseException e) { logger.warn("Invalid createdAtTo: {}", createdAtTo); }
         }
 
-        List<PurchaseInvoiceDto> invoices = service.list(filter);
-        return ResponseEntity.ok(invoices);
+        PageRequest pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "created_at"));
+        return ResponseEntity.ok(service.listPaged(filter, pageable));
     }
 
     /**

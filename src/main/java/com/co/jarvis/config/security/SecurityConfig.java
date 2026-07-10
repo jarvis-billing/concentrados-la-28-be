@@ -85,6 +85,8 @@ public class SecurityConfig {
                             .requestMatchers(HttpMethod.PATCH, "/api/preventas/*/cancel").hasAnyRole("ADMIN", "FACTURADOR")
                             .requestMatchers(HttpMethod.PATCH, "/api/preventas/*/billed").hasAnyRole("ADMIN", "FACTURADOR")
                             .requestMatchers(HttpMethod.PATCH, "/api/preventas/**").hasAnyRole("ADMIN", "FACTURADOR")
+                            // Conteo físico — todos los roles autenticados
+                            .requestMatchers("/api/inventory/count/**").authenticated()
                             .anyRequest().authenticated();
                 });
 

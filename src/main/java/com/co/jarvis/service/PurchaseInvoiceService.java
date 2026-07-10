@@ -1,18 +1,22 @@
 package com.co.jarvis.service;
 
 import com.co.jarvis.dto.BulkLastCostItem;
+import com.co.jarvis.dto.PagedResponse;
 import com.co.jarvis.dto.PurchaseFilterDto;
 import com.co.jarvis.dto.CostHistoryEntry;
 import com.co.jarvis.dto.PurchaseInvoiceDto;
 import com.co.jarvis.dto.PurchaseInvoiceItemDto;
 import com.co.jarvis.dto.PurchaseLastCostInfo;
+import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
 import java.util.List;
 
 public interface PurchaseInvoiceService {
-    
+
     List<PurchaseInvoiceDto> list(PurchaseFilterDto filter);
+
+    PagedResponse<PurchaseInvoiceDto> listPaged(PurchaseFilterDto filter, Pageable pageable);
     
     PurchaseInvoiceDto findById(String id);
     
