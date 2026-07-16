@@ -48,4 +48,14 @@ public class Presentation {
     @Field("package_type")
     private String packageType;
 
+    /**
+     * Indica si la presentación está activa para uso normal (búsqueda, venta, conteo).
+     * false = oculta; solo visible en reportes con filtro explícito.
+     * Default null/true = activa. Se usa null como equivalente a true para compatibilidad
+     * con documentos existentes que no tienen el campo.
+     */
+    @Field("active")
+    @Builder.Default
+    private Boolean active = true;
+
 }

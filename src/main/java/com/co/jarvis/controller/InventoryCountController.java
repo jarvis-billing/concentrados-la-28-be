@@ -2,6 +2,7 @@ package com.co.jarvis.controller;
 
 import com.co.jarvis.dto.UserDto;
 import com.co.jarvis.dto.inventorycount.*;
+import com.co.jarvis.dto.inventorycount.HideUncountedResultDto;
 import com.co.jarvis.entity.InventoryCountSession;
 import com.co.jarvis.service.InventoryCountService;
 import com.co.jarvis.service.impl.InventoryCountServiceImpl;
@@ -94,5 +95,17 @@ public class InventoryCountController {
     public ResponseEntity<InventoryCountReportDto> getReport(@PathVariable String id) {
         log.info("InventoryCountController -> getReport: {}", id);
         return ResponseEntity.ok(inventoryCountService.getReport(id));
+    }
+
+    /**
+     * Marca como inactivas (active=false) todas las presentaciones que NO fueron
+     * contadas en la sesión indicada. Solo afecta presentaciones actualmente activas.
+     * Las presentaciones inactivas quedan ocultas de búsquedas normales pero visibles
+     * en reportes con filtro explícito.
+     */
+    @PostMapping("/sessions/{id}/hide-uncounted")
+    public ResponseEntity<HideUncountedResultDto> hideUncounted(@PathVariable String id) {
+        log.info("InventoryCountController -> hideUncounted: {}", id);
+        return ResponseEntity.ok(inventoryCountService.hideUncountedPresentations(id));
     }
 }

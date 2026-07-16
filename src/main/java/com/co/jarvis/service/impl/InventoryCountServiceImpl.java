@@ -175,8 +175,10 @@ public class InventoryCountServiceImpl implements InventoryCountService {
                 uncounted.add(UncountedProductDto.builder()
                         .barcode(pres.getBarcode())
                         .productId(product.getId())
+                        .presentationId(pres.getId())
                         .description(buildDescription(product.getDescription(), pres.getLabel()))
                         .presentationLabel(pres.getLabel())
+                        .active(pres.getActive())
                         .systemStock(sysStock)
                         .build());
             }
@@ -219,6 +221,46 @@ public class InventoryCountServiceImpl implements InventoryCountService {
                 .stream()
                 .map(this::toSessionDto)
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public HideUncountedResultDto hideUncountedPresentations(String sessionId) {
+        log.info("InventoryCountServiceImpl -> hideUncountedPresentations: {}", sessionId);
+        InventoryCountSession session = getById(sessionId);
+
+        // Barcodes que SÍ fueron contados en esta sesión
+        Set<String> countedBarcodes = session.getEntries().stream()
+                .map(InventoryCountEntry::getBarcode)
+                .collect(Collectors.toSet());
+
+        int hiddenCount = 0;
+        List<Product> allProducts = productRepository.findAll();
+
+        for (Product product : allProducts) {
+            if (product.getPresentations() == null) continue;
+            boolean modified = false;
+            for (Presentation pres : product.getPresentations()) {
+                if (pres.getBarcode() == null) continue;
+                // Solo ocultar las que NO fueron contadas y están actualmente activas
+                if (!countedBarcodes.contains(pres.getBarcode())
+                        && !Boolean.FALSE.equals(pres.getActive())) {
+                    pres.setActive(false);
+                    modified = true;
+                    hiddenCount++;
+                }
+            }
+            if (modified) {
+                productRepository.save(product);
+            }
+        }
+
+        log.info("hideUncountedPresentations: {} presentaciones ocultadas para sesión {}", hiddenCount, sessionId);
+        return HideUncountedResultDto.builder()
+                .hidden(hiddenCount)
+                .message(hiddenCount == 0
+                        ? "No hay presentaciones nuevas para ocultar."
+                        : hiddenCount + " presentación(es) marcadas como inactivas.")
+                .build();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

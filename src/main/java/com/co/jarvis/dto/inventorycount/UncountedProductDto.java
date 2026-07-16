@@ -15,7 +15,10 @@ public class UncountedProductDto {
 
     private String barcode;
     private String productId;
+    private String presentationId;
     private String description;
     private String presentationLabel;
     private BigDecimal systemStock;
+    /** false = presentación marcada como inactiva/oculta */
+    private Boolean active;
 }

@@ -1,5 +1,6 @@
 package com.co.jarvis.service;
 
+import com.co.jarvis.dto.inventorycount.HideUncountedResultDto;
 import com.co.jarvis.dto.inventorycount.InventoryCountReportDto;
 import com.co.jarvis.dto.inventorycount.InventoryCountSessionDto;
 import com.co.jarvis.dto.inventorycount.RecordCountRequest;
@@ -26,4 +27,10 @@ public interface InventoryCountService {
     InventoryCountReportDto getReport(String sessionId);
 
     List<InventoryCountSessionDto> listSessions(LocalDate fromDate, LocalDate toDate);
+
+    /**
+     * Marca active=false en todas las presentaciones que NO fueron contadas en la sesión.
+     * Retorna el número de presentaciones ocultadas.
+     */
+    HideUncountedResultDto hideUncountedPresentations(String sessionId);
 }
