@@ -123,7 +123,77 @@ public class InventoryCountServiceImpl implements InventoryCountService {
             session.setPausedAt(null);
         }
 
-        return sessionRepository.save(session);
+        InventoryCountSession saved = sessionRepository.save(session);
+
+        // Actualizar stock del producto inmediatamente
+        Product product = productRepository.findByPresentationsBarcode(request.getBarcode());
+        if (product != null) {
+            updateProductStock(product, List.of(request));
+        }
+
+        return saved;
+    }
+
+    @Override
+    public InventoryCountSession recordBulkCount(String sessionId, BulkCountRequest request, String username) {
+        log.info("InventoryCountServiceImpl -> recordBulkCount session={} entries={}", sessionId,
+                request.getEntries() != null ? request.getEntries().size() : 0);
+        InventoryCountSession session = getById(sessionId);
+
+        if (session.getStatus() == InventoryCountStatus.COMPLETED ||
+                session.getStatus() == InventoryCountStatus.CANCELLED) {
+            throw new SaveRecordException("No se puede registrar conteo en una sesión " + session.getStatus());
+        }
+
+        for (RecordCountRequest req : request.getEntries()) {
+            BigDecimal systemStock = getSystemStock(req.getBarcode());
+            BigDecimal countedQty  = req.getCountedQty() != null ? req.getCountedQty() : BigDecimal.ZERO;
+            BigDecimal difference  = countedQty.subtract(systemStock != null ? systemStock : BigDecimal.ZERO);
+
+            List<InventoryCountEntry> entries = session.getEntries();
+            Optional<InventoryCountEntry> existing = entries.stream()
+                    .filter(e -> e.getBarcode().equals(req.getBarcode()))
+                    .findFirst();
+
+            if (existing.isPresent()) {
+                InventoryCountEntry entry = existing.get();
+                entry.setCountedQty(countedQty);
+                entry.setSystemStock(systemStock);
+                entry.setDifference(difference);
+                entry.setCountedAt(LocalDateTime.now(COLOMBIA_ZONE));
+                entry.setCountedBy(username);
+            } else {
+                entries.add(InventoryCountEntry.builder()
+                        .barcode(req.getBarcode())
+                        .productId(req.getProductId())
+                        .description(req.getDescription())
+                        .presentationLabel(req.getPresentationLabel())
+                        .systemStock(systemStock)
+                        .countedQty(countedQty)
+                        .difference(difference)
+                        .countedAt(LocalDateTime.now(COLOMBIA_ZONE))
+                        .countedBy(username)
+                        .build());
+            }
+        }
+
+        if (session.getStatus() == InventoryCountStatus.PAUSED) {
+            session.setStatus(InventoryCountStatus.IN_PROGRESS);
+            session.setPausedAt(null);
+        }
+
+        InventoryCountSession saved = sessionRepository.save(session);
+
+        // Actualizar stock — todos los entries pertenecen al mismo producto
+        if (request.getEntries() != null && !request.getEntries().isEmpty()) {
+            Product product = productRepository.findByPresentationsBarcode(
+                    request.getEntries().get(0).getBarcode());
+            if (product != null) {
+                updateProductStock(product, request.getEntries());
+            }
+        }
+
+        return saved;
     }
 
     @Override
@@ -264,6 +334,37 @@ public class InventoryCountServiceImpl implements InventoryCountService {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Calcula y persiste el stock del producto basándose en las entradas de conteo.
+     * stock = Σ (countedQty_i × fixedAmount_i)  —  fixedAmount_i = 1 si no aplica.
+     */
+    private void updateProductStock(Product product, List<RecordCountRequest> requests) {
+        if (product.getStock() == null) {
+            product.setStock(new Stock());
+        }
+        BigDecimal totalStock = BigDecimal.ZERO;
+        for (RecordCountRequest req : requests) {
+            BigDecimal qty    = req.getCountedQty() != null ? req.getCountedQty() : BigDecimal.ZERO;
+            BigDecimal factor = BigDecimal.ONE;
+            if (product.getPresentations() != null) {
+                Optional<Presentation> presOpt = product.getPresentations().stream()
+                        .filter(p -> req.getBarcode().equals(p.getBarcode()))
+                        .findFirst();
+                if (presOpt.isPresent()) {
+                    Presentation pres = presOpt.get();
+                    if (pres.getFixedAmount() != null
+                            && pres.getFixedAmount().compareTo(BigDecimal.ZERO) > 0) {
+                        factor = pres.getFixedAmount();
+                    }
+                }
+            }
+            totalStock = totalStock.add(qty.multiply(factor));
+        }
+        product.getStock().setQuantity(totalStock);
+        productRepository.save(product);
+        log.info("Stock actualizado para '{}': {} unidades", product.getDescription(), totalStock);
+    }
 
     private BigDecimal getSystemStock(String barcode) {
         Product product = productRepository.findByPresentationsBarcode(barcode);

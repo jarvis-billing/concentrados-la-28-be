@@ -113,9 +113,9 @@ public class InventoryServiceImpl implements InventoryService {
         movement.setNewStock(newStock);
         
         // Actualizar stock del producto
-        product.getStock().setQuantity(BigDecimal.valueOf(newStock));
+        product.getStock().setQuantity(BigDecimal.valueOf(newStock).setScale(2, RoundingMode.HALF_UP));
         productRepository.save(product);
-        
+
         // Establecer unidad de medida
         if (movement.getUnitMeasure() == null && product.getStock().getUnitMeasure() != null) {
             movement.setUnitMeasure(product.getStock().getUnitMeasure().name());
@@ -236,9 +236,9 @@ public class InventoryServiceImpl implements InventoryService {
             product.getProductCode(), physicalStock, totalSold, totalPurchased, adjustedStock, difference);
         
         // 7. Actualizar stock del producto con el valor ajustado
-        product.getStock().setQuantity(BigDecimal.valueOf(adjustedStock));
+        product.getStock().setQuantity(BigDecimal.valueOf(adjustedStock).setScale(2, RoundingMode.HALF_UP));
         productRepository.save(product);
-        
+
         // 8. Guardar inventario físico
         inventory.setCreatedAt(DateTimeUtil.nowLocalDateTime());
         if (inventory.getDate() == null) {
@@ -400,9 +400,9 @@ public class InventoryServiceImpl implements InventoryService {
             product.getProductCode(), systemStock, totalPhysicalStock, totalSold, totalPurchased, adjustedStock, difference);
         
         // 7. Actualizar stock del producto con el valor ajustado
-        product.getStock().setQuantity(BigDecimal.valueOf(adjustedStock));
+        product.getStock().setQuantity(BigDecimal.valueOf(adjustedStock).setScale(2, RoundingMode.HALF_UP));
         productRepository.save(product);
-        
+
         // 8. Construir notas detalladas con el desglose por presentación
         String detailedNotes = buildPresentationCountNotes(request, product);
         
@@ -641,9 +641,9 @@ public class InventoryServiceImpl implements InventoryService {
         adjustment.setNewStock(newStock);
         
         // 7. Actualizar stock del producto
-        product.getStock().setQuantity(BigDecimal.valueOf(newStock));
+        product.getStock().setQuantity(BigDecimal.valueOf(newStock).setScale(2, RoundingMode.HALF_UP));
         productRepository.save(product);
-        
+
         // 8. Guardar ajuste
         adjustment.setCreatedAt(DateTimeUtil.nowLocalDateTime());
         if (adjustment.getDate() == null) {
@@ -945,11 +945,11 @@ public class InventoryServiceImpl implements InventoryService {
         
         Double previousStock = product.getStock().getQuantity().doubleValue();
         Double newStock = previousStock + quantity;
-        
+
         // Actualizar stock
-        product.getStock().setQuantity(BigDecimal.valueOf(newStock));
+        product.getStock().setQuantity(BigDecimal.valueOf(newStock).setScale(2, RoundingMode.HALF_UP));
         productRepository.save(product);
-        
+
         // Crear movimiento
         InventoryMovement movement = InventoryMovement.builder()
                 .date(DateTimeUtil.nowLocalDateTime())
@@ -981,11 +981,11 @@ public class InventoryServiceImpl implements InventoryService {
         
         Double previousStock = product.getStock().getQuantity().doubleValue();
         Double newStock = previousStock - quantity;
-        
+
         // Actualizar stock
-        product.getStock().setQuantity(BigDecimal.valueOf(newStock));
+        product.getStock().setQuantity(BigDecimal.valueOf(newStock).setScale(2, RoundingMode.HALF_UP));
         productRepository.save(product);
-        
+
         // Crear movimiento
         InventoryMovement movement = InventoryMovement.builder()
                 .date(DateTimeUtil.nowLocalDateTime())
@@ -1018,7 +1018,7 @@ public class InventoryServiceImpl implements InventoryService {
         Double previousStock = product.getStock().getQuantity().doubleValue();
         Double newStock = previousStock + quantity;
 
-        product.getStock().setQuantity(BigDecimal.valueOf(newStock));
+        product.getStock().setQuantity(BigDecimal.valueOf(newStock).setScale(2, RoundingMode.HALF_UP));
         productRepository.save(product);
 
         InventoryMovement movement = InventoryMovement.builder()
@@ -1052,7 +1052,7 @@ public class InventoryServiceImpl implements InventoryService {
         Double previousStock = product.getStock().getQuantity().doubleValue();
         Double newStock = previousStock - quantity;
 
-        product.getStock().setQuantity(BigDecimal.valueOf(newStock));
+        product.getStock().setQuantity(BigDecimal.valueOf(newStock).setScale(2, RoundingMode.HALF_UP));
         productRepository.save(product);
 
         InventoryMovement movement = InventoryMovement.builder()

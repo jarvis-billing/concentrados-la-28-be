@@ -416,13 +416,22 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public ProductDto update(ProductDto dto, String barcode) {
-        log.info("ProductServiceImpl -> update");
+    public ProductDto update(ProductDto dto, String idOrBarcode) {
+        log.info("ProductServiceImpl -> update: idOrBarcode={}", idOrBarcode);
         try {
-            Product product = Optional.ofNullable(repository.findByPresentationsBarcode(barcode)).orElseThrow(()
-                    -> new ResourceNotFoundException(MessageConstants.RESOURCE_NOT_FOUND));
+            // Intentar primero por ID de MongoDB; si no existe, buscar por barcode de presentación
+            // (compatibilidad con llamadas antiguas que pasan el barcode como identificador)
+            String productId = repository.findById(idOrBarcode)
+                    .map(Product::getId)
+                    .orElseGet(() -> {
+                        Product byBarcode = repository.findByPresentationsBarcode(idOrBarcode);
+                        if (byBarcode == null) {
+                            throw new ResourceNotFoundException(MessageConstants.RESOURCE_NOT_FOUND);
+                        }
+                        return byBarcode.getId();
+                    });
 
-            return updatePresent(dto, product.getId());
+            return updatePresent(dto, productId);
         } catch (ResourceNotFoundException e) {
             log.error("ProductServiceImpl -> update -> ERROR: {}", e.getMessage());
             throw new ResourceNotFoundException(MessageConstants.RESOURCE_NOT_FOUND, e);
@@ -569,14 +578,14 @@ public class ProductServiceImpl implements ProductService {
                 .packs(null)
                 .remainder(null)
                 .unit(unitBase)
-                .label(format("%s %s", qty.stripTrailingZeros().toPlainString(), unitBase))
+                .label(format("%s %s", qty.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString(), unitBase))
                 .computedAt(Instant.now().toString())
                 .build();
         }
 
         // Buscar el packSize (mayor fixedAmount de presentaciones con isFixedAmount=true)
         BigDecimal packSize = findLargestPackSize(product, unitBase);
-        
+
         if (packSize == null || packSize.compareTo(BigDecimal.ZERO) <= 0) {
             // No hay presentaciones fijas válidas
             return DisplayStock.builder()
@@ -585,7 +594,7 @@ public class ProductServiceImpl implements ProductService {
                 .packs(null)
                 .remainder(null)
                 .unit(unitBase)
-                .label(format("%s %s", qty.stripTrailingZeros().toPlainString(), unitBase))
+                .label(format("%s %s", qty.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString(), unitBase))
                 .computedAt(Instant.now().toString())
                 .build();
         }
@@ -597,10 +606,10 @@ public class ProductServiceImpl implements ProductService {
 
         // Construir label
         String noun = "WEIGHT".equals(kind) ? "bultos" : "rollos";
-        String label = format("%d %s + %s %s", 
-            packs, 
-            noun, 
-            remainder.stripTrailingZeros().toPlainString(), 
+        String label = format("%d %s + %s %s",
+            packs,
+            noun,
+            remainder.setScale(2, RoundingMode.HALF_UP).stripTrailingZeros().toPlainString(),
             unitBase
         );
 

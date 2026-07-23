@@ -87,6 +87,9 @@ public class SecurityConfig {
                             .requestMatchers(HttpMethod.PATCH, "/api/preventas/**").hasAnyRole("ADMIN", "FACTURADOR")
                             // Conteo físico — todos los roles autenticados
                             .requestMatchers("/api/inventory/count/**").authenticated()
+                            // Permisos de funcionalidades: check es público (autenticado); CRUD solo ADMIN
+                            .requestMatchers(HttpMethod.GET, "/api/feature-permissions/check").authenticated()
+                            .requestMatchers("/api/feature-permissions/**").hasRole("ADMIN")
                             .anyRequest().authenticated();
                 });
 

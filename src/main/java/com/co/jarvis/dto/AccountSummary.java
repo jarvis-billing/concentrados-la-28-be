@@ -27,6 +27,9 @@ public class AccountSummary {
     /** Historial de pagos con saldo acumulado antes y después de cada abono */
     private List<PaymentWithBalance> payments;
 
+    /** Facturas a crédito del cliente — detalle completo para el reporte */
+    private List<BillingDto> creditBillings;
+
     @Data
     @Builder
     @NoArgsConstructor

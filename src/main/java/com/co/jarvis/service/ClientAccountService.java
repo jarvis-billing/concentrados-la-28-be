@@ -4,6 +4,7 @@ import com.co.jarvis.dto.AccountReportFilter;
 import com.co.jarvis.dto.AccountSummary;
 import com.co.jarvis.dto.BillingDto;
 import com.co.jarvis.dto.ManualDebtRequest;
+import com.co.jarvis.dto.PagedAccountReport;
 import com.co.jarvis.dto.RegisterPaymentRequest;
 import com.co.jarvis.entity.AccountPayment;
 import com.co.jarvis.entity.AccountTransaction;
@@ -29,6 +30,8 @@ public interface ClientAccountService {
     AccountPayment registerPayment(RegisterPaymentRequest request, String createdBy);
 
     List<AccountSummary> generateReport(AccountReportFilter filter);
+
+    PagedAccountReport generatePagedReport(AccountReportFilter filter);
 
     AccountTransaction registerManualDebt(ManualDebtRequest request, String createdBy);
 

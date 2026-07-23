@@ -4,6 +4,7 @@ import com.co.jarvis.dto.AccountReportFilter;
 import com.co.jarvis.dto.AccountSummary;
 import com.co.jarvis.dto.BillingDto;
 import com.co.jarvis.dto.ManualDebtRequest;
+import com.co.jarvis.dto.PagedAccountReport;
 import com.co.jarvis.dto.RegisterPaymentRequest;
 import com.co.jarvis.entity.AccountPayment;
 import com.co.jarvis.entity.AccountTransaction;
@@ -152,87 +153,154 @@ public class ClientAccountServiceImpl implements ClientAccountService {
 
     @Override
     public List<AccountSummary> generateReport(AccountReportFilter filter) {
-        log.info("ClientAccountServiceImpl -> generateReport");
+        log.info("ClientAccountServiceImpl -> generateReport filter={}", filter);
 
-        List<Criteria> criteriaList = new ArrayList<>();
+        boolean hasDateFilter   = filter.getFromDate() != null || filter.getToDate() != null;
+        boolean onlyWithBalance = Boolean.TRUE.equals(filter.getOnlyWithBalance());
 
-        if (filter.getClientId() != null && !filter.getClientId().isEmpty()) {
-            criteriaList.add(Criteria.where("clientId").is(filter.getClientId()));
-        }
+        LocalDateTime from = filter.getFromDate() != null
+                ? filter.getFromDate().atStartOfDay() : null;
+        LocalDateTime to   = filter.getToDate() != null
+                ? filter.getToDate().atTime(LocalTime.MAX) : null;
 
-        if (Boolean.TRUE.equals(filter.getOnlyWithBalance())) {
-            criteriaList.add(Criteria.where("currentBalance").gt(0));
-        }
+        List<ClientAccount> accounts = fetchAccounts(filter, hasDateFilter, onlyWithBalance, from, to);
 
-        Query query = new Query();
-        if (!criteriaList.isEmpty()) {
-            query.addCriteria(new Criteria().andOperator(criteriaList.toArray(new Criteria[0])));
-        }
+        int page = filter.getPage() != null ? filter.getPage() : 0;
+        int size = filter.getSize() != null ? filter.getSize() : 50;
+        List<ClientAccount> pageSlice = paginate(accounts, page, size);
 
-        List<ClientAccount> accounts = mongoTemplate.find(query, ClientAccount.class);
-
-        return accounts.stream()
-                .filter(account -> filterByDateRange(account, filter))
-                .map(this::mapToAccountSummary)
+        return pageSlice.stream()
+                .map(acc -> mapToAccountSummary(acc, hasDateFilter ? from : null,
+                                                    hasDateFilter ? to   : null))
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Filtra cuentas por rango de fechas basándose en actividad real:
-     * - Si la cuenta tiene pagos, se incluye si algún pago cae dentro del rango
-     * - Si la cuenta no tiene pagos pero tiene deuda, se incluye si fue creada dentro del rango
-     * El filtro de fecha NO excluye cuentas con saldo pendiente y sin pagos recientes
-     * (esas se muestran siempre para no perder deudas de vista).
-     */
-    private boolean filterByDateRange(ClientAccount account, AccountReportFilter filter) {
-        if (filter.getFromDate() == null && filter.getToDate() == null) {
-            return true;
-        }
+    @Override
+    public PagedAccountReport generatePagedReport(AccountReportFilter filter) {
+        log.info("ClientAccountServiceImpl -> generatePagedReport filter={}", filter);
 
-        LocalDateTime from = filter.getFromDate() != null ? filter.getFromDate().atStartOfDay() : null;
-        LocalDateTime to   = filter.getToDate()   != null ? filter.getToDate().atTime(LocalTime.MAX) : null;
+        boolean hasDateFilter   = filter.getFromDate() != null || filter.getToDate() != null;
+        boolean onlyWithBalance = Boolean.TRUE.equals(filter.getOnlyWithBalance());
 
-        // Si tiene pagos, verificar si alguno cae en el rango
-        if (account.getPayments() != null && !account.getPayments().isEmpty()) {
-            boolean hasPaymentInRange = account.getPayments().stream()
-                    .filter(p -> p.getPaymentDate() != null)
-                    .anyMatch(p -> {
-                        LocalDateTime pd = p.getPaymentDate();
-                        return (from == null || !pd.isBefore(from))
-                            && (to   == null || !pd.isAfter(to));
-                    });
-            if (hasPaymentInRange) return true;
-        }
+        LocalDateTime from = filter.getFromDate() != null
+                ? filter.getFromDate().atStartOfDay() : null;
+        LocalDateTime to   = filter.getToDate() != null
+                ? filter.getToDate().atTime(LocalTime.MAX) : null;
 
-        // Si tiene saldo pendiente y no tiene pagos, incluir siempre (deuda sin abonar)
-        if (account.getCurrentBalance() != null
-                && account.getCurrentBalance().compareTo(java.math.BigDecimal.ZERO) > 0
-                && (account.getPayments() == null || account.getPayments().isEmpty())) {
-            return true;
-        }
+        List<ClientAccount> all = fetchAccounts(filter, hasDateFilter, onlyWithBalance, from, to);
 
-        // Verificar por fecha de creación de la cuenta
-        LocalDateTime createdAt = account.getCreatedAt();
-        if (createdAt != null) {
-            return (from == null || !createdAt.isBefore(from))
-                && (to   == null || !createdAt.isAfter(to));
-        }
+        int page = filter.getPage() != null ? filter.getPage() : 0;
+        int size = filter.getSize() != null ? filter.getSize() : 20;
+        long total = all.size();
+        int totalPages = size > 0 ? (int) Math.ceil((double) total / size) : 1;
 
-        return false;
+        List<ClientAccount> pageSlice = paginate(all, page, size);
+
+        List<AccountSummary> content = pageSlice.stream()
+                .map(acc -> mapToAccountSummary(acc, hasDateFilter ? from : null,
+                                                    hasDateFilter ? to   : null))
+                .collect(Collectors.toList());
+
+        return PagedAccountReport.builder()
+                .content(content)
+                .page(page)
+                .size(size)
+                .totalElements(total)
+                .totalPages(totalPages)
+                .build();
     }
 
+    /**
+     * Obtiene todas las cuentas que coinciden con el filtro.
+     * Para onlyWithBalance=true usa el @Query probado del repositorio (evita el mismatch
+     * de tipos Decimal128 que hace fallar la comparación $gt:0 en MongoTemplate).
+     */
+    private List<ClientAccount> fetchAccounts(AccountReportFilter filter,
+                                              boolean hasDateFilter,
+                                              boolean onlyWithBalance,
+                                              LocalDateTime from,
+                                              LocalDateTime to) {
+        if (onlyWithBalance) {
+            // @Query("{ 'currentBalance': { $gt: 0 } }") — probado y funcionando
+            List<ClientAccount> withBalance = new ArrayList<>(clientAccountRepository.findAllWithBalance());
+            log.info("fetchAccounts (onlyWithBalance=true) found {} accounts with balance", withBalance.size());
+
+            // Filtrar por cliente específico si se proporcionó
+            if (filter.getClientId() != null && !filter.getClientId().isEmpty()) {
+                String cid = filter.getClientId();
+                withBalance = withBalance.stream()
+                        .filter(a -> cid.equals(a.getClientId()))
+                        .collect(Collectors.toList());
+            }
+            return withBalance;
+        }
+
+        // Ruta normal: MongoTemplate con filtros de fecha y cliente
+        List<Criteria> andCriteria = new ArrayList<>();
+
+        if (filter.getClientId() != null && !filter.getClientId().isEmpty()) {
+            andCriteria.add(Criteria.where("clientId").is(filter.getClientId()));
+        }
+
+        if (hasDateFilter) {
+            Criteria byLastPayment = Criteria.where("lastPaymentDate");
+            if (from != null) byLastPayment = byLastPayment.gte(from);
+            if (to   != null) byLastPayment = byLastPayment.lte(to);
+
+            Criteria byCreatedAt = Criteria.where("createdAt");
+            if (from != null) byCreatedAt = byCreatedAt.gte(from);
+            if (to   != null) byCreatedAt = byCreatedAt.lte(to);
+
+            andCriteria.add(new Criteria().orOperator(byLastPayment, byCreatedAt));
+        }
+
+        Query query = new Query();
+        if (!andCriteria.isEmpty()) {
+            query.addCriteria(new Criteria().andOperator(andCriteria.toArray(new Criteria[0])));
+        }
+
+        log.info("fetchAccounts MongoDB query: {}", query.getQueryObject().toJson());
+        List<ClientAccount> accounts = mongoTemplate.find(query, ClientAccount.class);
+        log.info("fetchAccounts found {} accounts", accounts.size());
+        return accounts;
+    }
+
+    /** Retorna la sublist correspondiente a la página solicitada. */
+    private List<ClientAccount> paginate(List<ClientAccount> all, int page, int size) {
+        if (size <= 0) return all;
+        int fromIdx = page * size;
+        if (fromIdx >= all.size()) return List.of();
+        int toIdx = Math.min(fromIdx + size, all.size());
+        return all.subList(fromIdx, toIdx);
+    }
+
+    /**
+     * Versión sin filtro de fecha — para llamadas que no son de reporte general.
+     */
     private AccountSummary mapToAccountSummary(ClientAccount account) {
+        return mapToAccountSummary(account, null, null);
+    }
+
+    /**
+     * Construye el AccountSummary calculando saldo corrido por pago.
+     * Si fromFilter/toFilter están definidos, filtra los pagos mostrados en el detalle
+     * (pero los totales reflejan SIEMPRE el estado real de la cuenta).
+     */
+    private AccountSummary mapToAccountSummary(ClientAccount account,
+                                               LocalDateTime fromFilter,
+                                               LocalDateTime toFilter) {
         Long daysSinceLastPayment = null;
         if (account.getLastPaymentDate() != null) {
             daysSinceLastPayment = ChronoUnit.DAYS.between(account.getLastPaymentDate(), LocalDateTime.now());
         }
 
         Client client = account.getClient();
-        String clientName = client != null ? client.getFullName() : "N/A";
-        String clientIdNumber = client != null ? client.getIdNumber() : "N/A";
+        String clientName      = client != null ? client.getFullName()  : "N/A";
+        String clientIdNumber  = client != null ? client.getIdNumber()  : "N/A";
 
-        // Calcular historial de pagos con saldo antes/después de cada abono.
-        // Los pagos se ordenan por fecha ascendente para calcular el balance corrido.
+        // ── Historial de pagos con saldo corrido ──────────────────────────────
+        // Siempre se calculan TODOS los pagos para el saldo corrido;
+        // luego se filtra visualmente si hay rango de fechas activo.
         List<AccountSummary.PaymentWithBalance> paymentsWithBalance = new ArrayList<>();
         if (account.getPayments() != null && !account.getPayments().isEmpty()) {
             List<AccountPayment> sorted = account.getPayments().stream()
@@ -240,7 +308,6 @@ public class ClientAccountServiceImpl implements ClientAccountService {
                     .sorted(java.util.Comparator.comparing(AccountPayment::getPaymentDate))
                     .collect(Collectors.toList());
 
-            // Reconstruir el saldo corrido desde la deuda total hacia atrás
             java.math.BigDecimal runningBalance = account.getTotalDebt() != null
                     ? account.getTotalDebt() : java.math.BigDecimal.ZERO;
 
@@ -251,20 +318,35 @@ public class ClientAccountServiceImpl implements ClientAccountService {
                 java.math.BigDecimal after  = runningBalance.subtract(amount);
                 runningBalance = after;
 
-                paymentsWithBalance.add(AccountSummary.PaymentWithBalance.builder()
-                        .id(payment.getId())
-                        .amount(amount)
-                        .paymentMethod(payment.getPaymentMethod() != null
-                                ? payment.getPaymentMethod().name() : null)
-                        .reference(payment.getReference())
-                        .notes(payment.getNotes())
-                        .paymentDate(payment.getPaymentDate())
-                        .createdBy(payment.getCreatedBy())
-                        .balanceBefore(before)
-                        .balanceAfter(after)
-                        .build());
+                // Aplicar filtro de fecha al detalle si corresponde
+                LocalDateTime pd = payment.getPaymentDate();
+                boolean inRange = (fromFilter == null || !pd.isBefore(fromFilter))
+                               && (toFilter   == null || !pd.isAfter(toFilter));
+                if (inRange) {
+                    paymentsWithBalance.add(AccountSummary.PaymentWithBalance.builder()
+                            .id(payment.getId())
+                            .amount(amount)
+                            .paymentMethod(payment.getPaymentMethod() != null
+                                    ? payment.getPaymentMethod().name() : null)
+                            .reference(payment.getReference())
+                            .notes(payment.getNotes())
+                            .paymentDate(payment.getPaymentDate())
+                            .createdBy(payment.getCreatedBy())
+                            .balanceBefore(before)
+                            .balanceAfter(after)
+                            .build());
+                }
             }
         }
+
+        // ── Facturas a crédito ────────────────────────────────────────────────
+        Query billingsQuery = new Query();
+        billingsQuery.addCriteria(Criteria.where("client.id").is(account.getClientId()));
+        billingsQuery.addCriteria(Criteria.where("saleType").is(EPaymentType.CREDITO));
+        billingsQuery.with(org.springframework.data.domain.Sort.by(
+                org.springframework.data.domain.Sort.Direction.DESC, "dateTimeRecord"));
+        List<Billing> billings = mongoTemplate.find(billingsQuery, Billing.class);
+        List<BillingDto> creditBillings = billingMapper.mapToDtoList(billings);
 
         return AccountSummary.builder()
                 .clientId(account.getClientId())
@@ -276,6 +358,7 @@ public class ClientAccountServiceImpl implements ClientAccountService {
                 .lastPaymentDate(account.getLastPaymentDate())
                 .daysSinceLastPayment(daysSinceLastPayment)
                 .payments(paymentsWithBalance)
+                .creditBillings(creditBillings)
                 .build();
     }
 

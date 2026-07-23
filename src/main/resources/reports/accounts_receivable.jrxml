@@ -1,0 +1,398 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd"
+              name="accounts_receivable"
+              pageWidth="595" pageHeight="842"
+              columnWidth="555" leftMargin="20" rightMargin="20" topMargin="20" bottomMargin="20"
+              uuid="a1234567-e5f6-7890-abcd-ef1234567890">
+
+  <!-- ═══ SUB-DATASET: Historial de Pagos ═══════════════════════════════════ -->
+  <subDataset name="paymentsDS" uuid="b1234567-e5f6-7890-abcd-ef1234567891">
+    <field name="paymentDate"   class="java.time.LocalDateTime"/>
+    <field name="amount"        class="java.math.BigDecimal"/>
+    <field name="paymentMethod" class="java.lang.String"/>
+    <field name="reference"     class="java.lang.String"/>
+    <field name="balanceBefore" class="java.math.BigDecimal"/>
+    <field name="balanceAfter"  class="java.math.BigDecimal"/>
+  </subDataset>
+
+  <!-- ═══ SUB-DATASET: Facturas a Crédito ═══════════════════════════════════ -->
+  <subDataset name="billingsDS" uuid="c1234567-e5f6-7890-abcd-ef1234567892">
+    <field name="billNumber"     class="java.lang.String"/>
+    <field name="dateTimeRecord" class="java.time.OffsetDateTime"/>
+    <field name="totalBilling"   class="java.math.BigDecimal"/>
+  </subDataset>
+
+  <!-- ═══ CAMPOS PRINCIPALES (AccountSummary) ════════════════════════════════ -->
+  <field name="clientName"           class="java.lang.String"/>
+  <field name="clientIdNumber"       class="java.lang.String"/>
+  <field name="totalDebt"            class="java.math.BigDecimal"/>
+  <field name="totalPaid"            class="java.math.BigDecimal"/>
+  <field name="currentBalance"       class="java.math.BigDecimal"/>
+  <field name="lastPaymentDate"      class="java.time.LocalDateTime"/>
+  <field name="daysSinceLastPayment" class="java.lang.Long"/>
+  <field name="payments"             class="java.util.List"/>
+  <field name="creditBillings"       class="java.util.List"/>
+
+  <!-- ═══ VARIABLES DE TOTALES ════════════════════════════════════════════════ -->
+  <variable name="totalDebtVar" class="java.math.BigDecimal" calculation="Sum">
+    <variableExpression><![CDATA[$F{totalDebt} != null ? $F{totalDebt} : java.math.BigDecimal.ZERO]]></variableExpression>
+    <initialValueExpression><![CDATA[java.math.BigDecimal.ZERO]]></initialValueExpression>
+  </variable>
+  <variable name="totalPaidVar" class="java.math.BigDecimal" calculation="Sum">
+    <variableExpression><![CDATA[$F{totalPaid} != null ? $F{totalPaid} : java.math.BigDecimal.ZERO]]></variableExpression>
+    <initialValueExpression><![CDATA[java.math.BigDecimal.ZERO]]></initialValueExpression>
+  </variable>
+  <variable name="totalBalanceVar" class="java.math.BigDecimal" calculation="Sum">
+    <variableExpression><![CDATA[$F{currentBalance} != null ? $F{currentBalance} : java.math.BigDecimal.ZERO]]></variableExpression>
+    <initialValueExpression><![CDATA[java.math.BigDecimal.ZERO]]></initialValueExpression>
+  </variable>
+
+  <background><band splitType="Stretch"/></background>
+
+  <!-- ═══ TÍTULO ═══════════════════════════════════════════════════════════════ -->
+  <title>
+    <band height="65" splitType="Stretch">
+      <rectangle>
+        <reportElement x="0" y="0" width="555" height="50" mode="Opaque" backcolor="#1C2833" uuid="t_bg"/>
+        <graphicElement><pen lineWidth="0.0"/></graphicElement>
+      </rectangle>
+      <staticText>
+        <reportElement x="0" y="5" width="555" height="26" forecolor="#FFFFFF" uuid="t_title"/>
+        <textElement textAlignment="Center" verticalAlignment="Middle">
+          <font size="15" isBold="true"/>
+        </textElement>
+        <text><![CDATA[REPORTE DE CUENTAS POR COBRAR]]></text>
+      </staticText>
+      <textField>
+        <reportElement x="0" y="31" width="555" height="16" forecolor="#95A5A6" uuid="t_date"/>
+        <textElement textAlignment="Center" verticalAlignment="Middle">
+          <font size="8"/>
+        </textElement>
+        <textFieldExpression><![CDATA["Generado el: " + new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm").format(new java.util.Date())]]></textFieldExpression>
+      </textField>
+      <line>
+        <reportElement x="0" y="52" width="555" height="1" forecolor="#2ECC71" uuid="t_line"/>
+        <graphicElement><pen lineWidth="2.5"/></graphicElement>
+      </line>
+    </band>
+  </title>
+
+  <!-- ═══ DETALLE ══════════════════════════════════════════════════════════════ -->
+  <detail>
+
+    <!-- ─── Banda 1: Encabezado del cliente ─────────────────────────────────── -->
+    <band height="52" splitType="Stretch">
+      <rectangle>
+        <reportElement x="0" y="4" width="555" height="46" mode="Opaque" backcolor="#2C3E50" uuid="d1_bg"/>
+        <graphicElement><pen lineWidth="0.0"/></graphicElement>
+      </rectangle>
+      <!-- Nombre -->
+      <textField isStretchWithOverflow="true">
+        <reportElement x="5" y="8" width="340" height="18" forecolor="#FFFFFF" uuid="d1_name"/>
+        <textElement verticalAlignment="Middle">
+          <font size="11" isBold="true"/>
+        </textElement>
+        <textFieldExpression><![CDATA[$F{clientName} != null ? $F{clientName}.toUpperCase() : ""]]></textFieldExpression>
+      </textField>
+      <!-- NIT -->
+      <textField isBlankWhenNull="true">
+        <reportElement x="5" y="26" width="180" height="16" forecolor="#BDC3C7" uuid="d1_nit"/>
+        <textElement verticalAlignment="Middle">
+          <font size="8"/>
+        </textElement>
+        <textFieldExpression><![CDATA["NIT/CC: " + ($F{clientIdNumber} != null ? $F{clientIdNumber} : "N/A")]]></textFieldExpression>
+      </textField>
+      <!-- Días sin pago -->
+      <textField isBlankWhenNull="true">
+        <reportElement x="190" y="26" width="155" height="16" forecolor="#BDC3C7" uuid="d1_days"/>
+        <textElement verticalAlignment="Middle">
+          <font size="8"/>
+        </textElement>
+        <textFieldExpression><![CDATA[$F{daysSinceLastPayment} != null ? "Último pago hace " + $F{daysSinceLastPayment} + " días" : "Sin pagos registrados"]]></textFieldExpression>
+      </textField>
+      <!-- Deuda Total -->
+      <staticText>
+        <reportElement x="345" y="8" width="68" height="12" forecolor="#E74C3C" uuid="d1_dl"/>
+        <textElement textAlignment="Right" verticalAlignment="Middle">
+          <font size="7"/>
+        </textElement>
+        <text><![CDATA[Deuda Total]]></text>
+      </staticText>
+      <textField>
+        <reportElement x="345" y="20" width="68" height="20" forecolor="#E74C3C" uuid="d1_dv"/>
+        <textElement textAlignment="Right" verticalAlignment="Middle">
+          <font size="8" isBold="true"/>
+        </textElement>
+        <textFieldExpression><![CDATA["$" + ($F{totalDebt} != null ? String.format("%,.0f", $F{totalDebt}) : "0")]]></textFieldExpression>
+      </textField>
+      <!-- Pagado -->
+      <staticText>
+        <reportElement x="416" y="8" width="66" height="12" forecolor="#2ECC71" uuid="d1_pl"/>
+        <textElement textAlignment="Right" verticalAlignment="Middle">
+          <font size="7"/>
+        </textElement>
+        <text><![CDATA[Pagado]]></text>
+      </staticText>
+      <textField>
+        <reportElement x="416" y="20" width="66" height="20" forecolor="#2ECC71" uuid="d1_pv"/>
+        <textElement textAlignment="Right" verticalAlignment="Middle">
+          <font size="8" isBold="true"/>
+        </textElement>
+        <textFieldExpression><![CDATA["$" + ($F{totalPaid} != null ? String.format("%,.0f", $F{totalPaid}) : "0")]]></textFieldExpression>
+      </textField>
+      <!-- Saldo -->
+      <staticText>
+        <reportElement x="485" y="6" width="70" height="12" forecolor="#F39C12" uuid="d1_sl"/>
+        <textElement textAlignment="Right" verticalAlignment="Middle">
+          <font size="7"/>
+        </textElement>
+        <text><![CDATA[Saldo Pendiente]]></text>
+      </staticText>
+      <textField>
+        <reportElement x="485" y="18" width="70" height="22" forecolor="#F39C12" uuid="d1_sv"/>
+        <textElement textAlignment="Right" verticalAlignment="Middle">
+          <font size="9" isBold="true"/>
+        </textElement>
+        <textFieldExpression><![CDATA["$" + ($F{currentBalance} != null ? String.format("%,.0f", $F{currentBalance}) : "0")]]></textFieldExpression>
+      </textField>
+    </band>
+
+    <!-- ─── Banda 2: Tabla de Pagos ──────────────────────────────────────────── -->
+    <band height="28" splitType="Stretch">
+      <printWhenExpression><![CDATA[$F{payments} != null && !$F{payments}.isEmpty()]]></printWhenExpression>
+      <staticText>
+        <reportElement x="0" y="0" width="555" height="14" mode="Opaque" backcolor="#5D6D7E" forecolor="#FFFFFF" uuid="d2_sh"/>
+        <textElement verticalAlignment="Middle">
+          <font size="8" isBold="true"/>
+          <paragraph leftIndent="6"/>
+        </textElement>
+        <text><![CDATA[Historial de Pagos]]></text>
+      </staticText>
+      <componentElement>
+        <reportElement x="0" y="14" width="555" height="14" uuid="d2_tbl"/>
+        <jr:table xmlns:jr="http://jasperreports.sourceforge.net/jasperreports/components"
+                  xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports/components http://jasperreports.sourceforge.net/xsd/components.xsd">
+          <datasetRun subDataset="paymentsDS" uuid="d2_dr">
+            <dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRBeanCollectionDataSource($F{payments})]]></dataSourceExpression>
+          </datasetRun>
+          <jr:column width="95" uuid="p_c1">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="95" height="14" mode="Opaque" backcolor="#85929E" forecolor="#FFFFFF" uuid="p_c1h"/>
+                <box><pen lineWidth="0.5" lineColor="#5D6D7E"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[Fecha]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="95" height="14" uuid="p_c1d"/>
+                <box><pen lineWidth="0.5" lineColor="#D5D8DC"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA[$F{paymentDate} != null ? new java.text.SimpleDateFormat("dd/MM/yyyy").format(java.util.Date.from($F{paymentDate}.atZone(java.time.ZoneId.systemDefault()).toInstant())) : ""]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <jr:column width="110" uuid="p_c2">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="110" height="14" mode="Opaque" backcolor="#85929E" forecolor="#FFFFFF" uuid="p_c2h"/>
+                <box><pen lineWidth="0.5" lineColor="#5D6D7E"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[Monto Pagado]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="110" height="14" uuid="p_c2d"/>
+                <box><pen lineWidth="0.5" lineColor="#D5D8DC"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7"/><paragraph rightIndent="5"/></textElement>
+                <textFieldExpression><![CDATA[$F{amount} != null ? "$" + String.format("%,.0f", $F{amount}) : ""]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <jr:column width="100" uuid="p_c3">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="100" height="14" mode="Opaque" backcolor="#85929E" forecolor="#FFFFFF" uuid="p_c3h"/>
+                <box><pen lineWidth="0.5" lineColor="#5D6D7E"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[Método de Pago]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="100" height="14" uuid="p_c3d"/>
+                <box><pen lineWidth="0.5" lineColor="#D5D8DC"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA[$F{paymentMethod}]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <jr:column width="140" uuid="p_c4">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="140" height="14" mode="Opaque" backcolor="#85929E" forecolor="#FFFFFF" uuid="p_c4h"/>
+                <box><pen lineWidth="0.5" lineColor="#5D6D7E"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[Referencia]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true" isStretchWithOverflow="true">
+                <reportElement x="0" y="0" width="140" height="14" uuid="p_c4d"/>
+                <box><pen lineWidth="0.5" lineColor="#D5D8DC"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA[$F{reference}]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <jr:column width="110" uuid="p_c5">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="110" height="14" mode="Opaque" backcolor="#85929E" forecolor="#FFFFFF" uuid="p_c5h"/>
+                <box><pen lineWidth="0.5" lineColor="#5D6D7E"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[Saldo Después]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="110" height="14" uuid="p_c5d"/>
+                <box><pen lineWidth="0.5" lineColor="#D5D8DC"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7"/><paragraph rightIndent="5"/></textElement>
+                <textFieldExpression><![CDATA[$F{balanceAfter} != null ? "$" + String.format("%,.0f", $F{balanceAfter}) : ""]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+        </jr:table>
+      </componentElement>
+    </band>
+
+    <!-- ─── Banda 3: Tabla de Facturas a Crédito ─────────────────────────────── -->
+    <band height="28" splitType="Stretch">
+      <printWhenExpression><![CDATA[$F{creditBillings} != null && !$F{creditBillings}.isEmpty()]]></printWhenExpression>
+      <staticText>
+        <reportElement x="0" y="0" width="555" height="14" mode="Opaque" backcolor="#6C3483" forecolor="#FFFFFF" uuid="d3_sh"/>
+        <textElement verticalAlignment="Middle">
+          <font size="8" isBold="true"/>
+          <paragraph leftIndent="6"/>
+        </textElement>
+        <text><![CDATA[Facturas a Crédito]]></text>
+      </staticText>
+      <componentElement>
+        <reportElement x="0" y="14" width="555" height="14" uuid="d3_tbl"/>
+        <jr:table xmlns:jr="http://jasperreports.sourceforge.net/jasperreports/components"
+                  xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports/components http://jasperreports.sourceforge.net/xsd/components.xsd">
+          <datasetRun subDataset="billingsDS" uuid="d3_dr">
+            <dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRBeanCollectionDataSource($F{creditBillings})]]></dataSourceExpression>
+          </datasetRun>
+          <jr:column width="120" uuid="b_c1">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="120" height="14" mode="Opaque" backcolor="#9B59B6" forecolor="#FFFFFF" uuid="b_c1h"/>
+                <box><pen lineWidth="0.5" lineColor="#6C3483"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[No. Factura]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="120" height="14" uuid="b_c1d"/>
+                <box><pen lineWidth="0.5" lineColor="#D7BDE2"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA[$F{billNumber}]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <jr:column width="155" uuid="b_c2">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="155" height="14" mode="Opaque" backcolor="#9B59B6" forecolor="#FFFFFF" uuid="b_c2h"/>
+                <box><pen lineWidth="0.5" lineColor="#6C3483"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[Fecha Emisión]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="155" height="14" uuid="b_c2d"/>
+                <box><pen lineWidth="0.5" lineColor="#D7BDE2"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA[$F{dateTimeRecord} != null ? new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm").format(java.util.Date.from($F{dateTimeRecord}.toInstant())) : ""]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <jr:column width="280" uuid="b_c3">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="280" height="14" mode="Opaque" backcolor="#9B59B6" forecolor="#FFFFFF" uuid="b_c3h"/>
+                <box><pen lineWidth="0.5" lineColor="#6C3483"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[Total Factura]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="280" height="14" uuid="b_c3d"/>
+                <box><pen lineWidth="0.5" lineColor="#D7BDE2"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7"/><paragraph rightIndent="5"/></textElement>
+                <textFieldExpression><![CDATA[$F{totalBilling} != null ? "$" + String.format("%,.0f", $F{totalBilling}) : ""]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+        </jr:table>
+      </componentElement>
+    </band>
+
+    <!-- ─── Banda 4: Separador ───────────────────────────────────────────────── -->
+    <band height="10">
+      <line>
+        <reportElement x="0" y="5" width="555" height="1" forecolor="#BDC3C7" uuid="sep"/>
+        <graphicElement><pen lineWidth="0.5"/></graphicElement>
+      </line>
+    </band>
+
+  </detail>
+
+  <!-- ═══ SUMMARY (Totales Globales) ═════════════════════════════════════════ -->
+  <summary>
+    <band height="50">
+      <rectangle>
+        <reportElement x="0" y="5" width="555" height="40" mode="Opaque" backcolor="#1C2833" uuid="sum_bg"/>
+        <graphicElement><pen lineWidth="0.0"/></graphicElement>
+      </rectangle>
+      <staticText>
+        <reportElement x="5" y="12" width="150" height="22" forecolor="#FFFFFF" uuid="sum_lbl"/>
+        <textElement verticalAlignment="Middle">
+          <font size="10" isBold="true"/>
+        </textElement>
+        <text><![CDATA[TOTALES GENERALES]]></text>
+      </staticText>
+      <textField>
+        <reportElement x="155" y="12" width="130" height="22" forecolor="#E74C3C" uuid="sum_debt"/>
+        <textElement textAlignment="Right" verticalAlignment="Middle">
+          <font size="9" isBold="true"/>
+        </textElement>
+        <textFieldExpression><![CDATA["Deuda: $" + ($V{totalDebtVar} != null ? String.format("%,.0f", $V{totalDebtVar}) : "0")]]></textFieldExpression>
+      </textField>
+      <textField>
+        <reportElement x="290" y="12" width="130" height="22" forecolor="#2ECC71" uuid="sum_paid"/>
+        <textElement textAlignment="Right" verticalAlignment="Middle">
+          <font size="9" isBold="true"/>
+        </textElement>
+        <textFieldExpression><![CDATA["Pagado: $" + ($V{totalPaidVar} != null ? String.format("%,.0f", $V{totalPaidVar}) : "0")]]></textFieldExpression>
+      </textField>
+      <textField>
+        <reportElement x="423" y="12" width="132" height="22" forecolor="#F39C12" uuid="sum_bal"/>
+        <textElement textAlignment="Right" verticalAlignment="Middle">
+          <font size="10" isBold="true"/>
+        </textElement>
+        <textFieldExpression><![CDATA["Saldo: $" + ($V{totalBalanceVar} != null ? String.format("%,.0f", $V{totalBalanceVar}) : "0")]]></textFieldExpression>
+      </textField>
+    </band>
+  </summary>
+
+</jasperReport>

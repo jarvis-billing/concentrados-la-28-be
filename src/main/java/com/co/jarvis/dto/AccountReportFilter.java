@@ -17,4 +17,6 @@ public class AccountReportFilter {
     private LocalDate fromDate;
     private LocalDate toDate;
     private Boolean onlyWithBalance;
+    private Integer page;
+    private Integer size;
 }

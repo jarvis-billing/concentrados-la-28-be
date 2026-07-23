@@ -4,7 +4,10 @@ import com.co.jarvis.dto.AccountReportFilter;
 import com.co.jarvis.dto.AccountSummary;
 import com.co.jarvis.dto.BillingDto;
 import com.co.jarvis.dto.ManualDebtRequest;
+import com.co.jarvis.dto.PagedAccountReport;
 import com.co.jarvis.dto.RegisterPaymentRequest;
+import com.co.jarvis.util.reports.ReportExporter;
+import net.sf.jasperreports.engine.JRException;
 import com.co.jarvis.entity.AccountPayment;
 import com.co.jarvis.entity.AccountTransaction;
 import com.co.jarvis.entity.ClientAccount;
@@ -15,6 +18,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.FileNotFoundException;
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
@@ -27,6 +31,7 @@ import java.util.Map;
 public class ClientAccountController {
 
     private final ClientAccountService clientAccountService;
+    private final ReportExporter reportExporter;
 
     @GetMapping("/client/{clientId}")
     public ResponseEntity<ClientAccount> getByClientId(@PathVariable String clientId) {
@@ -79,10 +84,34 @@ public class ClientAccountController {
     }
 
     @PostMapping("/report")
-    public ResponseEntity<List<AccountSummary>> generateReport(@RequestBody AccountReportFilter filter) {
+    public ResponseEntity<PagedAccountReport> generateReport(@RequestBody AccountReportFilter filter) {
         log.info("ClientAccountController -> generateReport");
-        List<AccountSummary> report = clientAccountService.generateReport(filter);
+        PagedAccountReport report = clientAccountService.generatePagedReport(filter);
         return ResponseEntity.ok(report);
+    }
+
+    @PostMapping(value = "/report/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> generateReportPdf(@RequestBody AccountReportFilter filter) {
+        log.info("ClientAccountController -> generateReportPdf");
+        try {
+            // Obtener TODOS los registros (sin paginación) para el PDF
+            AccountReportFilter allFilter = AccountReportFilter.builder()
+                    .clientId(filter.getClientId())
+                    .fromDate(filter.getFromDate())
+                    .toDate(filter.getToDate())
+                    .onlyWithBalance(filter.getOnlyWithBalance())
+                    .page(0)
+                    .size(Integer.MAX_VALUE)
+                    .build();
+            PagedAccountReport report = clientAccountService.generatePagedReport(allFilter);
+            byte[] pdf = reportExporter.exportToPdf(report.getContent(), "accounts_receivable");
+            return ResponseEntity.ok()
+                    .header("Content-Disposition", "attachment; filename=\"cuentas_por_cobrar.pdf\"")
+                    .body(pdf);
+        } catch (JRException | FileNotFoundException e) {
+            log.error("Error generando PDF de cuentas por cobrar: {}", e.getMessage());
+            return ResponseEntity.internalServerError().build();
+        }
     }
 
     @PostMapping("/manual-debt")

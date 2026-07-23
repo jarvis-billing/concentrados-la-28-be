@@ -74,6 +74,19 @@ public class InventoryCountController {
         return ResponseEntity.ok(inventoryCountServiceImpl.toSessionDto(updated));
     }
 
+    /** Registrar conteo de múltiples presentaciones de un mismo producto de una sola vez */
+    @PostMapping("/sessions/{id}/entries/bulk")
+    public ResponseEntity<InventoryCountSessionDto> recordBulkCount(
+            @PathVariable String id,
+            @RequestBody BulkCountRequest request,
+            Authentication auth) {
+        log.info("InventoryCountController -> recordBulkCount session={} entries={}", id,
+                request.getEntries() != null ? request.getEntries().size() : 0);
+        UserDto actor = (UserDto) auth.getPrincipal();
+        InventoryCountSession updated = inventoryCountService.recordBulkCount(id, request, actor.getFullName());
+        return ResponseEntity.ok(inventoryCountServiceImpl.toSessionDto(updated));
+    }
+
     /** Pausar una sesión */
     @PatchMapping("/sessions/{id}/pause")
     public ResponseEntity<InventoryCountSessionDto> pause(@PathVariable String id) {
