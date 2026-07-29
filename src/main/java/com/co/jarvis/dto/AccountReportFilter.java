@@ -17,6 +17,8 @@ public class AccountReportFilter {
     private LocalDate fromDate;
     private LocalDate toDate;
     private Boolean onlyWithBalance;
+    /** Solo clientes cuyo saldo = 0 pero que tuvieron deuda (saldados) */
+    private Boolean onlySettled;
     private Integer page;
     private Integer size;
 }

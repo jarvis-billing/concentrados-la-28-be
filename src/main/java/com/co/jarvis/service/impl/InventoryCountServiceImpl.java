@@ -126,7 +126,7 @@ public class InventoryCountServiceImpl implements InventoryCountService {
         InventoryCountSession saved = sessionRepository.save(session);
 
         // Actualizar stock del producto inmediatamente
-        Product product = productRepository.findByPresentationsBarcode(request.getBarcode());
+        Product product = productRepository.findFirstByPresentationsBarcode(request.getBarcode());
         if (product != null) {
             updateProductStock(product, List.of(request));
         }
@@ -186,7 +186,7 @@ public class InventoryCountServiceImpl implements InventoryCountService {
 
         // Actualizar stock — todos los entries pertenecen al mismo producto
         if (request.getEntries() != null && !request.getEntries().isEmpty()) {
-            Product product = productRepository.findByPresentationsBarcode(
+            Product product = productRepository.findFirstByPresentationsBarcode(
                     request.getEntries().get(0).getBarcode());
             if (product != null) {
                 updateProductStock(product, request.getEntries());
@@ -367,7 +367,7 @@ public class InventoryCountServiceImpl implements InventoryCountService {
     }
 
     private BigDecimal getSystemStock(String barcode) {
-        Product product = productRepository.findByPresentationsBarcode(barcode);
+        Product product = productRepository.findFirstByPresentationsBarcode(barcode);
         if (product == null || product.getStock() == null) return BigDecimal.ZERO;
         return product.getStock().getQuantity() != null ? product.getStock().getQuantity() : BigDecimal.ZERO;
     }

@@ -100,6 +100,7 @@ public class ClientAccountController {
                     .fromDate(filter.getFromDate())
                     .toDate(filter.getToDate())
                     .onlyWithBalance(filter.getOnlyWithBalance())
+                    .onlySettled(filter.getOnlySettled())
                     .page(0)
                     .size(Integer.MAX_VALUE)
                     .build();

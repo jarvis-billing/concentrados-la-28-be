@@ -19,7 +19,7 @@ public interface ProductRepository extends MongoRepository<Product, String> {
     @Query("{ $or: [ { 'presentations.barcode': { $regex: ?0, $options: 'i' } }, { 'description': { $regex: ?1, $options: 'i' } } ] }")
     Page<Product> findByPresentationsBarcodeOrDescriptionContainingIgnoreCase(String barcode, String description, Pageable pageable);
 
-    Product findByPresentationsBarcode(String barcode);
+    Product findFirstByPresentationsBarcode(String barcode);
 
     @Aggregation(pipeline = {
             "{ $unwind: '$presentations' }",

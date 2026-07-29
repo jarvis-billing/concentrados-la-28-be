@@ -271,7 +271,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public ProductDto findByPresentationsBarcode(String barcode) {
-        Product product = repository.findByPresentationsBarcode(barcode);
+        Product product = repository.findFirstByPresentationsBarcode(barcode);
         return product != null ? enrichProductDto(product) : null;
     }
 
@@ -424,7 +424,7 @@ public class ProductServiceImpl implements ProductService {
             String productId = repository.findById(idOrBarcode)
                     .map(Product::getId)
                     .orElseGet(() -> {
-                        Product byBarcode = repository.findByPresentationsBarcode(idOrBarcode);
+                        Product byBarcode = repository.findFirstByPresentationsBarcode(idOrBarcode);
                         if (byBarcode == null) {
                             throw new ResourceNotFoundException(MessageConstants.RESOURCE_NOT_FOUND);
                         }

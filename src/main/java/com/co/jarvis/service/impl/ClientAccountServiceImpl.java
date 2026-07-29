@@ -29,9 +29,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -66,7 +68,7 @@ public class ClientAccountServiceImpl implements ClientAccountService {
     @Override
     public List<ClientAccount> getAllWithBalance() {
         log.info("ClientAccountServiceImpl -> getAllWithBalance");
-        return clientAccountRepository.findAllWithBalance();
+        return clientAccountRepository.findAllWithBalance(BigDecimal.ZERO);
     }
 
     @Override
@@ -189,6 +191,21 @@ public class ClientAccountServiceImpl implements ClientAccountService {
 
         List<ClientAccount> all = fetchAccounts(filter, hasDateFilter, onlyWithBalance, from, to);
 
+        // Ordenar A-Z por apellido, luego por nombre
+        all.sort((a, b) -> {
+            String sA = a.getClient() != null && a.getClient().getSurname() != null
+                    ? a.getClient().getSurname() : "";
+            String sB = b.getClient() != null && b.getClient().getSurname() != null
+                    ? b.getClient().getSurname() : "";
+            int cmp = sA.compareToIgnoreCase(sB);
+            if (cmp != 0) return cmp;
+            String nA = a.getClient() != null && a.getClient().getName() != null
+                    ? a.getClient().getName() : "";
+            String nB = b.getClient() != null && b.getClient().getName() != null
+                    ? b.getClient().getName() : "";
+            return nA.compareToIgnoreCase(nB);
+        });
+
         int page = filter.getPage() != null ? filter.getPage() : 0;
         int size = filter.getSize() != null ? filter.getSize() : 20;
         long total = all.size();
@@ -201,12 +218,31 @@ public class ClientAccountServiceImpl implements ClientAccountService {
                                                     hasDateFilter ? to   : null))
                 .collect(Collectors.toList());
 
+        // ── Totales globales (sobre TODOS los registros, no solo la página) ──
+        BigDecimal totalDebtGlobal = all.stream()
+                .map(a -> a.getTotalDebt() != null ? a.getTotalDebt() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalPaidGlobal = all.stream()
+                .map(a -> a.getTotalPaid() != null ? a.getTotalPaid() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalPendingGlobal = all.stream()
+                .filter(a -> a.getCurrentBalance() != null && a.getCurrentBalance().compareTo(BigDecimal.ZERO) > 0)
+                .map(ClientAccount::getCurrentBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        long pendingCountGlobal = all.stream()
+                .filter(a -> a.getCurrentBalance() != null && a.getCurrentBalance().compareTo(BigDecimal.ZERO) > 0)
+                .count();
+
         return PagedAccountReport.builder()
                 .content(content)
                 .page(page)
                 .size(size)
                 .totalElements(total)
                 .totalPages(totalPages)
+                .totalDebtGlobal(totalDebtGlobal)
+                .totalPaidGlobal(totalPaidGlobal)
+                .totalPendingGlobal(totalPendingGlobal)
+                .pendingCountGlobal(pendingCountGlobal)
                 .build();
     }
 
@@ -222,7 +258,7 @@ public class ClientAccountServiceImpl implements ClientAccountService {
                                               LocalDateTime to) {
         if (onlyWithBalance) {
             // @Query("{ 'currentBalance': { $gt: 0 } }") — probado y funcionando
-            List<ClientAccount> withBalance = new ArrayList<>(clientAccountRepository.findAllWithBalance());
+            List<ClientAccount> withBalance = new ArrayList<>(clientAccountRepository.findAllWithBalance(BigDecimal.ZERO));
             log.info("fetchAccounts (onlyWithBalance=true) found {} accounts with balance", withBalance.size());
 
             // Filtrar por cliente específico si se proporcionó
@@ -237,6 +273,12 @@ public class ClientAccountServiceImpl implements ClientAccountService {
 
         // Ruta normal: MongoTemplate con filtros de fecha y cliente
         List<Criteria> andCriteria = new ArrayList<>();
+
+        // Solo saldados: currentBalance = 0 pero con deuda histórica
+        if (Boolean.TRUE.equals(filter.getOnlySettled())) {
+            andCriteria.add(Criteria.where("totalDebt").gt(BigDecimal.ZERO));
+            // currentBalance = 0 se filtra en memoria (Decimal128 mismatch issue)
+        }
 
         if (filter.getClientId() != null && !filter.getClientId().isEmpty()) {
             andCriteria.add(Criteria.where("clientId").is(filter.getClientId()));
@@ -261,7 +303,17 @@ public class ClientAccountServiceImpl implements ClientAccountService {
 
         log.info("fetchAccounts MongoDB query: {}", query.getQueryObject().toJson());
         List<ClientAccount> accounts = mongoTemplate.find(query, ClientAccount.class);
-        log.info("fetchAccounts found {} accounts", accounts.size());
+        log.info("fetchAccounts found {} accounts before settled filter", accounts.size());
+
+        // Post-filter en memoria para onlySettled (evita mismatch Decimal128)
+        if (Boolean.TRUE.equals(filter.getOnlySettled())) {
+            accounts = accounts.stream()
+                    .filter(a -> a.getCurrentBalance() != null
+                              && a.getCurrentBalance().compareTo(BigDecimal.ZERO) == 0)
+                    .collect(Collectors.toList());
+            log.info("fetchAccounts (onlySettled) reduced to {} accounts", accounts.size());
+        }
+
         return accounts;
     }
 
@@ -297,25 +349,28 @@ public class ClientAccountServiceImpl implements ClientAccountService {
         Client client = account.getClient();
         String clientName      = client != null ? client.getFullName()  : "N/A";
         String clientIdNumber  = client != null ? client.getIdNumber()  : "N/A";
+        String clientPhone     = client != null ? client.getPhone()     : null;
+        String clientAddress   = client != null ? client.getAddress()   : null;
+        String clientNickname  = client != null ? client.getNickname()  : null;
 
-        // ── Historial de pagos con saldo corrido ──────────────────────────────
-        // Siempre se calculan TODOS los pagos para el saldo corrido;
-        // luego se filtra visualmente si hay rango de fechas activo.
+        // ── Historial de pagos con saldo corrido (ordenado del más reciente al más antiguo) ──
+        // El saldo corrido se calcula ASC para que los números sean correctos,
+        // luego la lista resultante se invierte para mostrar del último al primero.
         List<AccountSummary.PaymentWithBalance> paymentsWithBalance = new ArrayList<>();
         if (account.getPayments() != null && !account.getPayments().isEmpty()) {
-            List<AccountPayment> sorted = account.getPayments().stream()
+            List<AccountPayment> sortedAsc = account.getPayments().stream()
                     .filter(p -> p.getPaymentDate() != null)
-                    .sorted(java.util.Comparator.comparing(AccountPayment::getPaymentDate))
+                    .sorted(Comparator.comparing(AccountPayment::getPaymentDate))
                     .collect(Collectors.toList());
 
-            java.math.BigDecimal runningBalance = account.getTotalDebt() != null
-                    ? account.getTotalDebt() : java.math.BigDecimal.ZERO;
+            BigDecimal runningBalance = account.getTotalDebt() != null
+                    ? account.getTotalDebt() : BigDecimal.ZERO;
 
-            for (AccountPayment payment : sorted) {
-                java.math.BigDecimal amount = payment.getAmount() != null
-                        ? payment.getAmount() : java.math.BigDecimal.ZERO;
-                java.math.BigDecimal before = runningBalance;
-                java.math.BigDecimal after  = runningBalance.subtract(amount);
+            for (AccountPayment payment : sortedAsc) {
+                BigDecimal amount = payment.getAmount() != null
+                        ? payment.getAmount() : BigDecimal.ZERO;
+                BigDecimal before = runningBalance;
+                BigDecimal after  = runningBalance.subtract(amount);
                 runningBalance = after;
 
                 // Aplicar filtro de fecha al detalle si corresponde
@@ -328,6 +383,7 @@ public class ClientAccountServiceImpl implements ClientAccountService {
                             .amount(amount)
                             .paymentMethod(payment.getPaymentMethod() != null
                                     ? payment.getPaymentMethod().name() : null)
+                            .bankAccountName(payment.getBankAccountName())
                             .reference(payment.getReference())
                             .notes(payment.getNotes())
                             .paymentDate(payment.getPaymentDate())
@@ -337,6 +393,8 @@ public class ClientAccountServiceImpl implements ClientAccountService {
                             .build());
                 }
             }
+            // Invertir para mostrar del más reciente al más antiguo
+            Collections.reverse(paymentsWithBalance);
         }
 
         // ── Facturas a crédito ────────────────────────────────────────────────
@@ -348,10 +406,64 @@ public class ClientAccountServiceImpl implements ClientAccountService {
         List<Billing> billings = mongoTemplate.find(billingsQuery, Billing.class);
         List<BillingDto> creditBillings = billingMapper.mapToDtoList(billings);
 
+        // ── Líneas planas para el PDF (cabecera de factura + productos) ─────────
+        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        List<AccountSummary.BillingDetailLine> billingDetailLines = new ArrayList<>();
+        if (creditBillings != null) {
+            for (BillingDto billing : creditBillings) {
+                // Fila HEADER con datos de la factura
+                billingDetailLines.add(AccountSummary.BillingDetailLine.builder()
+                        .rowType("HEADER")
+                        .billNumber(billing.getBillNumber() != null
+                                ? billing.getBillNumber()
+                                : (billing.getId() != null ? billing.getId().substring(0, Math.min(8, billing.getId().length())) : "-"))
+                        .billingDate(billing.getDateTimeRecord() != null
+                                ? billing.getDateTimeRecord().format(dtf)
+                                : "-")
+                        .billTotal(billing.getTotalBilling())
+                        .build());
+                // Filas PRODUCT — una por cada ítem de la factura
+                if (billing.getSaleDetails() != null && !billing.getSaleDetails().isEmpty()) {
+                    billing.getSaleDetails().forEach(detail ->
+                            billingDetailLines.add(AccountSummary.BillingDetailLine.builder()
+                                    .rowType("PRODUCT")
+                                    .productDescription(detail.getProduct() != null
+                                            ? detail.getProduct().getDescription() : "-")
+                                    .quantity(detail.getAmount())
+                                    .unitPrice(detail.getUnitPrice())
+                                    .subtotal(detail.getSubTotal())
+                                    .build()));
+                }
+            }
+        }
+
+        // ── Transacciones manuales (cuaderno, ajustes, devoluciones) ──────────
+        List<AccountSummary.ManualTransaction> manualTx = new ArrayList<>();
+        if (account.getTransactions() != null) {
+            account.getTransactions().stream()
+                .filter(t -> t.getType() == EAccountTransactionType.MANUAL_DEBT
+                          || t.getType() == EAccountTransactionType.ADJUSTMENT
+                          || t.getType() == EAccountTransactionType.RETURN_ADJUSTMENT)
+                .forEach(t -> manualTx.add(AccountSummary.ManualTransaction.builder()
+                    .id(t.getId())
+                    .type(t.getType().name())
+                    .amount(t.getAmount())
+                    .balanceAfter(t.getBalanceAfter())
+                    .notes(t.getNotes())
+                    .source(t.getSource())
+                    .transactionDate(t.getTransactionDate())
+                    .createdBy(t.getCreatedBy())
+                    .createdAt(t.getCreatedAt())
+                    .build()));
+        }
+
         return AccountSummary.builder()
                 .clientId(account.getClientId())
                 .clientName(clientName)
                 .clientIdNumber(clientIdNumber)
+                .clientPhone(clientPhone)
+                .clientAddress(clientAddress)
+                .clientNickname(clientNickname)
                 .totalDebt(account.getTotalDebt())
                 .totalPaid(account.getTotalPaid())
                 .currentBalance(account.getCurrentBalance())
@@ -359,6 +471,8 @@ public class ClientAccountServiceImpl implements ClientAccountService {
                 .daysSinceLastPayment(daysSinceLastPayment)
                 .payments(paymentsWithBalance)
                 .creditBillings(creditBillings)
+                .billingDetailLines(billingDetailLines)
+                .manualTransactions(manualTx)
                 .build();
     }
 
