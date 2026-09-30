@@ -52,6 +52,17 @@ public class FeaturePermissionController {
         return ResponseEntity.ok(featurePermissionService.create(request, actor.getFullName()));
     }
 
+    /**
+     * Verifica si una funcionalidad global está habilitada (sin importar el rol).
+     * Retorna true si hay al menos un permiso activo y no expirado para la featureKey.
+     */
+    @GetMapping("/is-enabled")
+    public ResponseEntity<Map<String, Boolean>> isEnabled(@RequestParam String featureKey) {
+        log.info("FeaturePermissionController -> isEnabled featureKey={}", featureKey);
+        boolean enabled = featurePermissionService.isEnabled(featureKey);
+        return ResponseEntity.ok(Map.of("enabled", enabled));
+    }
+
     /** Revoca un permiso (lo desactiva) — ADMIN */
     @DeleteMapping("/{id}")
     public ResponseEntity<FeaturePermissionDto> revoke(@PathVariable String id) {

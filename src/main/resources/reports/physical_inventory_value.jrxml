@@ -1,0 +1,526 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jasperReport xmlns="http://jasperreports.sourceforge.net/jasperreports"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports http://jasperreports.sourceforge.net/xsd/jasperreport.xsd"
+              name="physical_inventory_value"
+              pageWidth="595" pageHeight="842"
+              columnWidth="555" leftMargin="20" rightMargin="20" topMargin="20" bottomMargin="20"
+              uuid="c2345678-e5f6-7890-abcd-ef1234567891">
+
+  <!-- ═══ SUB-DATASET: Filas de conteo (contados CON costo y SIN costo) ═══════ -->
+  <subDataset name="rowsDS" uuid="d3456789-e5f6-7890-abcd-ef1234567892">
+    <field name="description"       class="java.lang.String"/>
+    <field name="presentationLabel" class="java.lang.String"/>
+    <field name="barcode"           class="java.lang.String"/>
+    <field name="countDate"         class="java.lang.String"/>
+    <field name="physicalStock"     class="java.lang.Double"/>
+    <field name="unitMeasure"       class="java.lang.String"/>
+    <field name="unitCost"          class="java.math.BigDecimal"/>
+    <field name="totalValue"        class="java.math.BigDecimal"/>
+  </subDataset>
+
+  <!-- ═══ SUB-DATASET: Productos sin conteo físico en el período ═════════════ -->
+  <subDataset name="uncountedDS" uuid="e4567890-e5f6-7890-abcd-ef1234567893">
+    <field name="description" class="java.lang.String"/>
+    <field name="label"       class="java.lang.String"/>
+    <field name="barcode"     class="java.lang.String"/>
+    <field name="unitMeasure" class="java.lang.String"/>
+  </subDataset>
+
+  <!-- ═══ CAMPOS PRINCIPALES (PhysicalInventoryValueReportDto) ════════════════ -->
+  <field name="fromDate"          class="java.lang.String"/>
+  <field name="toDate"            class="java.lang.String"/>
+  <field name="generatedAt"       class="java.lang.String"/>
+  <field name="grandTotal"        class="java.math.BigDecimal"/>
+  <field name="rows"              class="java.util.List"/>
+  <field name="noCostRows"        class="java.util.List"/>
+  <field name="uncountedProducts" class="java.util.List"/>
+
+  <background><band splitType="Stretch"/></background>
+
+  <!-- ═══ TÍTULO ═══════════════════════════════════════════════════════════════ -->
+  <title>
+    <band height="65" splitType="Stretch">
+      <rectangle>
+        <reportElement x="0" y="0" width="555" height="50" mode="Opaque" backcolor="#1C2833" uuid="aa100001-0000-4000-8000-000000000001"/>
+        <graphicElement><pen lineWidth="0.0"/></graphicElement>
+      </rectangle>
+      <staticText>
+        <reportElement x="0" y="5" width="555" height="26" forecolor="#FFFFFF" uuid="aa100002-0000-4000-8000-000000000001"/>
+        <textElement textAlignment="Center" verticalAlignment="Middle">
+          <font size="14" isBold="true"/>
+        </textElement>
+        <text><![CDATA[REPORTE DE VALOR DE INVENTARIO FÍSICO]]></text>
+      </staticText>
+      <textField>
+        <reportElement x="0" y="31" width="555" height="16" forecolor="#95A5A6" uuid="aa100003-0000-4000-8000-000000000001"/>
+        <textElement textAlignment="Center" verticalAlignment="Middle">
+          <font size="8"/>
+        </textElement>
+        <textFieldExpression><![CDATA["Generado el: " + new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm").format(new java.util.Date())]]></textFieldExpression>
+      </textField>
+      <line>
+        <reportElement x="0" y="52" width="555" height="1" forecolor="#2ECC71" uuid="aa100004-0000-4000-8000-000000000001"/>
+        <graphicElement><pen lineWidth="2.5"/></graphicElement>
+      </line>
+    </band>
+  </title>
+
+  <!-- ═══ DETALLE (se ejecuta una vez para el único registro del DTO) ══════════ -->
+  <detail>
+
+    <!-- ─── Banda 1: Información del período ──────────────────────────────── -->
+    <band height="35" splitType="Stretch">
+      <rectangle>
+        <reportElement x="0" y="0" width="555" height="32" mode="Opaque" backcolor="#EBF5FB" uuid="aa200001-0000-4000-8000-000000000001"/>
+        <graphicElement><pen lineWidth="0.0"/></graphicElement>
+      </rectangle>
+      <staticText>
+        <reportElement x="8" y="7" width="60" height="18" forecolor="#5D6D7E" uuid="aa200002-0000-4000-8000-000000000001"/>
+        <textElement verticalAlignment="Middle">
+          <font size="8" isBold="true"/>
+        </textElement>
+        <text><![CDATA[Período:]]></text>
+      </staticText>
+      <textField isBlankWhenNull="true">
+        <reportElement x="68" y="7" width="300" height="18" forecolor="#1C2833" uuid="aa200003-0000-4000-8000-000000000001"/>
+        <textElement verticalAlignment="Middle">
+          <font size="9" isBold="true"/>
+        </textElement>
+        <textFieldExpression><![CDATA[($F{fromDate} != null ? $F{fromDate} : "—") + "  al  " + ($F{toDate} != null ? $F{toDate} : "—")]]></textFieldExpression>
+      </textField>
+    </band>
+
+    <!-- ─── Banda 2: Tabla de conteos con valor ───────────────────────────── -->
+    <band height="28" splitType="Stretch">
+      <staticText>
+        <reportElement x="0" y="0" width="555" height="14" mode="Opaque" backcolor="#2C3E50" forecolor="#FFFFFF" uuid="aa300001-0000-4000-8000-000000000001"/>
+        <textElement verticalAlignment="Middle">
+          <font size="8" isBold="true"/>
+          <paragraph leftIndent="6"/>
+        </textElement>
+        <text><![CDATA[Detalle de Conteos Físicos]]></text>
+      </staticText>
+      <componentElement>
+        <reportElement x="0" y="14" width="555" height="14" uuid="aa300002-0000-4000-8000-000000000001"/>
+        <jr:table xmlns:jr="http://jasperreports.sourceforge.net/jasperreports/components"
+                  xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports/components http://jasperreports.sourceforge.net/xsd/components.xsd">
+          <datasetRun subDataset="rowsDS" uuid="aa300003-0000-4000-8000-000000000001">
+            <dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRBeanCollectionDataSource($F{rows})]]></dataSourceExpression>
+          </datasetRun>
+          <!-- Descripción (185) -->
+          <jr:column width="185" uuid="aa310001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="185" height="14" mode="Opaque" backcolor="#5D6D7E" forecolor="#FFFFFF" uuid="aa310002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#4A6572"/></box>
+                <textElement verticalAlignment="Middle"><font size="7" isBold="true"/><paragraph leftIndent="4"/></textElement>
+                <text><![CDATA[Descripción]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true" isStretchWithOverflow="true">
+                <reportElement x="0" y="0" width="185" height="14" uuid="aa310003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#D5D8DC"/></box>
+                <textElement verticalAlignment="Middle"><font size="7"/><paragraph leftIndent="4"/></textElement>
+                <textFieldExpression><![CDATA[$F{description} + ($F{presentationLabel} != null && !$F{presentationLabel}.isEmpty() ? " - " + $F{presentationLabel} : "")]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- Código (80) -->
+          <jr:column width="80" uuid="aa320001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="80" height="14" mode="Opaque" backcolor="#5D6D7E" forecolor="#FFFFFF" uuid="aa320002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#4A6572"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[Código]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="80" height="14" uuid="aa320003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#D5D8DC"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="6.5"/></textElement>
+                <textFieldExpression><![CDATA[$F{barcode}]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- Fecha conteo (65) -->
+          <jr:column width="65" uuid="aa330001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="65" height="14" mode="Opaque" backcolor="#5D6D7E" forecolor="#FFFFFF" uuid="aa330002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#4A6572"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[Fecha conteo]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="65" height="14" uuid="aa330003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#D5D8DC"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA[$F{countDate}]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- Stock físico (60) -->
+          <jr:column width="60" uuid="aa340001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="60" height="14" mode="Opaque" backcolor="#5D6D7E" forecolor="#FFFFFF" uuid="aa340002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#4A6572"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7" isBold="true"/><paragraph rightIndent="4"/></textElement>
+                <text><![CDATA[Stock físico]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="60" height="14" uuid="aa340003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#D5D8DC"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7"/><paragraph rightIndent="4"/></textElement>
+                <textFieldExpression><![CDATA[$F{physicalStock} != null ? String.format("%.2f", $F{physicalStock}) : "0"]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- U/M (35) -->
+          <jr:column width="35" uuid="aa350001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="35" height="14" mode="Opaque" backcolor="#5D6D7E" forecolor="#FFFFFF" uuid="aa350002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#4A6572"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[U/M]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="35" height="14" uuid="aa350003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#D5D8DC"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="6.5"/></textElement>
+                <textFieldExpression><![CDATA[$F{unitMeasure}]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- Costo unit. (65) -->
+          <jr:column width="65" uuid="aa360001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="65" height="14" mode="Opaque" backcolor="#5D6D7E" forecolor="#FFFFFF" uuid="aa360002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#4A6572"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7" isBold="true"/><paragraph rightIndent="4"/></textElement>
+                <text><![CDATA[Costo unit.]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="65" height="14" uuid="aa360003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#D5D8DC"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7"/><paragraph rightIndent="4"/></textElement>
+                <textFieldExpression><![CDATA[$F{unitCost} != null ? "$" + String.format("%,.0f", $F{unitCost}) : "$0"]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- Valor total (65) -->
+          <jr:column width="65" uuid="aa370001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="65" height="14" mode="Opaque" backcolor="#1A5276" forecolor="#FFFFFF" uuid="aa370002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#154360"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7" isBold="true"/><paragraph rightIndent="4"/></textElement>
+                <text><![CDATA[Valor total]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="65" height="14" uuid="aa370003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#D5D8DC"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7" isBold="true"/><paragraph rightIndent="4"/></textElement>
+                <textFieldExpression><![CDATA[$F{totalValue} != null ? "$" + String.format("%,.0f", $F{totalValue}) : "$0"]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+        </jr:table>
+      </componentElement>
+    </band>
+
+    <!-- ─── Banda 3: Total general ─────────────────────────────────────────── -->
+    <band height="50">
+      <rectangle>
+        <reportElement x="0" y="5" width="555" height="40" mode="Opaque" backcolor="#1C2833" uuid="aa400001-0000-4000-8000-000000000001"/>
+        <graphicElement><pen lineWidth="0.0"/></graphicElement>
+      </rectangle>
+      <staticText>
+        <reportElement x="5" y="12" width="260" height="22" forecolor="#FFFFFF" uuid="aa400002-0000-4000-8000-000000000001"/>
+        <textElement verticalAlignment="Middle">
+          <font size="10" isBold="true"/>
+        </textElement>
+        <text><![CDATA[VALOR TOTAL DE INVENTARIO]]></text>
+      </staticText>
+      <textField>
+        <reportElement x="270" y="12" width="280" height="22" forecolor="#2ECC71" uuid="aa400003-0000-4000-8000-000000000001"/>
+        <textElement textAlignment="Right" verticalAlignment="Middle">
+          <font size="12" isBold="true"/>
+          <paragraph rightIndent="6"/>
+        </textElement>
+        <textFieldExpression><![CDATA["$" + ($F{grandTotal} != null ? String.format("%,.0f", $F{grandTotal}) : "0")]]></textFieldExpression>
+      </textField>
+    </band>
+
+    <!-- ─── Banda 4: Contados SIN precio de costo (condicional) ───────────── -->
+    <band height="28" splitType="Stretch">
+      <printWhenExpression><![CDATA[$F{noCostRows} != null && !$F{noCostRows}.isEmpty()]]></printWhenExpression>
+      <staticText>
+        <reportElement x="0" y="0" width="555" height="14" mode="Opaque" backcolor="#922B21" forecolor="#FFFFFF" uuid="aa500001-0000-4000-8000-000000000001"/>
+        <textElement verticalAlignment="Middle">
+          <font size="8" isBold="true"/>
+          <paragraph leftIndent="6"/>
+        </textElement>
+        <text><![CDATA[Productos contados SIN precio de costo — requieren actualización]]></text>
+      </staticText>
+      <componentElement>
+        <reportElement x="0" y="14" width="555" height="14" uuid="aa500002-0000-4000-8000-000000000001"/>
+        <jr:table xmlns:jr="http://jasperreports.sourceforge.net/jasperreports/components"
+                  xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports/components http://jasperreports.sourceforge.net/xsd/components.xsd">
+          <datasetRun subDataset="rowsDS" uuid="aa500003-0000-4000-8000-000000000002">
+            <dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRBeanCollectionDataSource($F{noCostRows})]]></dataSourceExpression>
+          </datasetRun>
+          <!-- Descripción (185) -->
+          <jr:column width="185" uuid="aa510001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="185" height="14" mode="Opaque" backcolor="#C0392B" forecolor="#FFFFFF" uuid="aa510002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#922B21"/></box>
+                <textElement verticalAlignment="Middle"><font size="7" isBold="true"/><paragraph leftIndent="4"/></textElement>
+                <text><![CDATA[Descripción]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true" isStretchWithOverflow="true">
+                <reportElement x="0" y="0" width="185" height="14" uuid="aa510003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#FADBD8"/></box>
+                <textElement verticalAlignment="Middle"><font size="7"/><paragraph leftIndent="4"/></textElement>
+                <textFieldExpression><![CDATA[$F{description} + ($F{presentationLabel} != null && !$F{presentationLabel}.isEmpty() ? " - " + $F{presentationLabel} : "")]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- Código (80) -->
+          <jr:column width="80" uuid="aa520001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="80" height="14" mode="Opaque" backcolor="#C0392B" forecolor="#FFFFFF" uuid="aa520002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#922B21"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[Código]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="80" height="14" uuid="aa520003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#FADBD8"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="6.5"/></textElement>
+                <textFieldExpression><![CDATA[$F{barcode}]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- Fecha conteo (65) -->
+          <jr:column width="65" uuid="aa530001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="65" height="14" mode="Opaque" backcolor="#C0392B" forecolor="#FFFFFF" uuid="aa530002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#922B21"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[Fecha conteo]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="65" height="14" uuid="aa530003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#FADBD8"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA[$F{countDate}]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- Stock físico (60) -->
+          <jr:column width="60" uuid="aa540001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="60" height="14" mode="Opaque" backcolor="#C0392B" forecolor="#FFFFFF" uuid="aa540002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#922B21"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7" isBold="true"/><paragraph rightIndent="4"/></textElement>
+                <text><![CDATA[Stock físico]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="60" height="14" uuid="aa540003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#FADBD8"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7"/><paragraph rightIndent="4"/></textElement>
+                <textFieldExpression><![CDATA[$F{physicalStock} != null ? String.format("%.2f", $F{physicalStock}) : "0"]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- U/M (35) -->
+          <jr:column width="35" uuid="aa550001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="35" height="14" mode="Opaque" backcolor="#C0392B" forecolor="#FFFFFF" uuid="aa550002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#922B21"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[U/M]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="35" height="14" uuid="aa550003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#FADBD8"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="6.5"/></textElement>
+                <textFieldExpression><![CDATA[$F{unitMeasure}]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- Costo unit. (65) — siempre $0 aquí -->
+          <jr:column width="65" uuid="aa560001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="65" height="14" mode="Opaque" backcolor="#C0392B" forecolor="#FFFFFF" uuid="aa560002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#922B21"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7" isBold="true"/><paragraph rightIndent="4"/></textElement>
+                <text><![CDATA[Costo unit.]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="65" height="14" forecolor="#E74C3C" uuid="aa560003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#FADBD8"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7" isBold="true"/><paragraph rightIndent="4"/></textElement>
+                <text><![CDATA[Sin costo]]></text>
+              </staticText>
+            </jr:detailCell>
+          </jr:column>
+          <!-- Valor total (65) — $0 -->
+          <jr:column width="65" uuid="aa570001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="65" height="14" mode="Opaque" backcolor="#922B21" forecolor="#FFFFFF" uuid="aa570002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#7B241C"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7" isBold="true"/><paragraph rightIndent="4"/></textElement>
+                <text><![CDATA[Valor total]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="65" height="14" forecolor="#E74C3C" uuid="aa570003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#FADBD8"/></box>
+                <textElement textAlignment="Right" verticalAlignment="Middle"><font size="7" isBold="true"/><paragraph rightIndent="4"/></textElement>
+                <text><![CDATA[$0]]></text>
+              </staticText>
+            </jr:detailCell>
+          </jr:column>
+        </jr:table>
+      </componentElement>
+    </band>
+
+    <!-- ─── Banda 5: Productos SIN conteo físico en el período (condicional) ─ -->
+    <band height="28" splitType="Stretch">
+      <printWhenExpression><![CDATA[$F{uncountedProducts} != null && !$F{uncountedProducts}.isEmpty()]]></printWhenExpression>
+      <staticText>
+        <reportElement x="0" y="0" width="555" height="14" mode="Opaque" backcolor="#6C3483" forecolor="#FFFFFF" uuid="aa600001-0000-4000-8000-000000000001"/>
+        <textElement verticalAlignment="Middle">
+          <font size="8" isBold="true"/>
+          <paragraph leftIndent="6"/>
+        </textElement>
+        <text><![CDATA[Productos sin conteo físico en el período]]></text>
+      </staticText>
+      <componentElement>
+        <reportElement x="0" y="14" width="555" height="14" uuid="aa600002-0000-4000-8000-000000000001"/>
+        <jr:table xmlns:jr="http://jasperreports.sourceforge.net/jasperreports/components"
+                  xsi:schemaLocation="http://jasperreports.sourceforge.net/jasperreports/components http://jasperreports.sourceforge.net/xsd/components.xsd">
+          <datasetRun subDataset="uncountedDS" uuid="aa600003-0000-4000-8000-000000000001">
+            <dataSourceExpression><![CDATA[new net.sf.jasperreports.engine.data.JRBeanCollectionDataSource($F{uncountedProducts})]]></dataSourceExpression>
+          </datasetRun>
+          <!-- Descripción (235) -->
+          <jr:column width="235" uuid="aa610001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="235" height="14" mode="Opaque" backcolor="#9B59B6" forecolor="#FFFFFF" uuid="aa610002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#6C3483"/></box>
+                <textElement verticalAlignment="Middle"><font size="7" isBold="true"/><paragraph leftIndent="4"/></textElement>
+                <text><![CDATA[Descripción]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true" isStretchWithOverflow="true">
+                <reportElement x="0" y="0" width="235" height="14" uuid="aa610003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#E8DAEF"/></box>
+                <textElement verticalAlignment="Middle"><font size="7"/><paragraph leftIndent="4"/></textElement>
+                <textFieldExpression><![CDATA[$F{description}]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- Presentación (155) -->
+          <jr:column width="155" uuid="aa620001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="155" height="14" mode="Opaque" backcolor="#9B59B6" forecolor="#FFFFFF" uuid="aa620002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#6C3483"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[Presentación]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true" isStretchWithOverflow="true">
+                <reportElement x="0" y="0" width="155" height="14" uuid="aa620003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#E8DAEF"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA[$F{label} != null ? $F{label} : "—"]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- Código (115) -->
+          <jr:column width="115" uuid="aa630001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="115" height="14" mode="Opaque" backcolor="#9B59B6" forecolor="#FFFFFF" uuid="aa630002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#6C3483"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[Código]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="115" height="14" uuid="aa630003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#E8DAEF"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="6.5"/></textElement>
+                <textFieldExpression><![CDATA[$F{barcode}]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+          <!-- U/M (50) -->
+          <jr:column width="50" uuid="aa640001-0000-4000-8000-000000000001">
+            <jr:columnHeader height="14">
+              <staticText>
+                <reportElement x="0" y="0" width="50" height="14" mode="Opaque" backcolor="#9B59B6" forecolor="#FFFFFF" uuid="aa640002-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#6C3483"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7" isBold="true"/></textElement>
+                <text><![CDATA[U/M]]></text>
+              </staticText>
+            </jr:columnHeader>
+            <jr:detailCell height="14">
+              <textField isBlankWhenNull="true">
+                <reportElement x="0" y="0" width="50" height="14" uuid="aa640003-0000-4000-8000-000000000001"/>
+                <box><pen lineWidth="0.5" lineColor="#E8DAEF"/></box>
+                <textElement textAlignment="Center" verticalAlignment="Middle"><font size="7"/></textElement>
+                <textFieldExpression><![CDATA[$F{unitMeasure}]]></textFieldExpression>
+              </textField>
+            </jr:detailCell>
+          </jr:column>
+        </jr:table>
+      </componentElement>
+    </band>
+
+  </detail>
+
+</jasperReport>

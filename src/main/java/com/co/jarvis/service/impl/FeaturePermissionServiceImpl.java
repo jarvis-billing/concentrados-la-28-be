@@ -62,6 +62,16 @@ public class FeaturePermissionServiceImpl implements FeaturePermissionService {
     }
 
     @Override
+    public boolean isEnabled(String featureKey) {
+        List<FeaturePermission> permissions = repository.findByFeatureKeyAndActiveTrue(featureKey);
+        LocalDateTime now = LocalDateTime.now();
+        return permissions.stream().anyMatch(p -> {
+            if (p.getType() == PermissionType.PERMANENT) return true;
+            return p.getExpiresAt() != null && p.getExpiresAt().isAfter(now);
+        });
+    }
+
+    @Override
     public FeaturePermissionDto revoke(String id) {
         FeaturePermission permission = repository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Permiso no encontrado: " + id));

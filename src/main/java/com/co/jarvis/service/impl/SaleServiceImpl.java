@@ -11,6 +11,7 @@ import com.co.jarvis.enums.EStatusOrder;
 import com.co.jarvis.enums.EVat;
 import com.co.jarvis.repository.BillingRepository;
 import com.co.jarvis.repository.ProductRepository;
+import com.co.jarvis.dto.AdjustCreditRequest;
 import com.co.jarvis.dto.UseCreditRequest;
 import com.co.jarvis.service.*;
 import com.co.jarvis.entity.Product;
@@ -658,6 +659,199 @@ public class SaleServiceImpl implements SaleService {
     }
 
     @Override
+    public BillingDto updateBilling(String id, BillingDto dto) {
+        log.info("SaleServiceImpl -> updateBilling: id={}", id);
+        Billing existing = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Factura no encontrada: " + id));
+
+        String createdBy = existing.getCreationUser() != null ? existing.getCreationUser().getId() : "system";
+
+        // ── Estado anterior ──────────────────────────────────────────────────────
+        String oldClientId = existing.getClient() != null ? existing.getClient().getId() : null;
+        EPaymentType oldSaleType = existing.getSaleType();
+        BigDecimal totalBilling = existing.getTotalBilling() != null ? existing.getTotalBilling() : BigDecimal.ZERO;
+
+        // Saldo a favor original usado en esta factura
+        BigDecimal oldCreditUsed = BigDecimal.ZERO;
+        if (oldClientId != null) {
+            oldCreditUsed = clientCreditService.getCreditUsedForBilling(oldClientId, id);
+        }
+
+        // ── Estado nuevo ─────────────────────────────────────────────────────────
+        String newClientId = (dto.getClient() != null && dto.getClient().getId() != null)
+                ? dto.getClient().getId()
+                : oldClientId;
+        EPaymentType newSaleType = dto.getSaleType() != null ? dto.getSaleType() : oldSaleType;
+
+        // Saldo a favor nuevo (suma de filas con método SALDO_FAVOR en los pagos del dto)
+        BigDecimal newCreditUsed = BigDecimal.ZERO;
+        if (dto.getPayments() != null) {
+            newCreditUsed = dto.getPayments().stream()
+                    .filter(p -> EPaymentMethod.SALDO_FAVOR.name().equals(p.getMethod()))
+                    .map(p -> p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+
+        boolean clientChanged = oldClientId != null && !oldClientId.equals(newClientId);
+
+        // ══════════════════════════════════════════════════════════════════════════
+        // RECONCILIACIÓN DE SALDO A FAVOR
+        // ══════════════════════════════════════════════════════════════════════════
+
+        if (clientChanged) {
+            // El cliente cambió: restaurar crédito al cliente original y descontar del nuevo
+            if (oldCreditUsed.compareTo(BigDecimal.ZERO) > 0) {
+                // Devolver saldo al cliente anterior
+                AdjustCreditRequest restore = AdjustCreditRequest.builder()
+                        .clientId(oldClientId)
+                        .amount(oldCreditUsed)
+                        .notes("Reversión de saldo a favor por edición de factura " + existing.getBillNumber())
+                        .build();
+                clientCreditService.adjustCredit(restore, createdBy);
+                log.info("Saldo a favor restaurado al cliente anterior {}: {}", oldClientId, oldCreditUsed);
+            }
+            if (newCreditUsed.compareTo(BigDecimal.ZERO) > 0) {
+                // Validar y descontar del nuevo cliente
+                BigDecimal availableBalance = clientCreditService.getClientCreditBalance(newClientId);
+                if (newCreditUsed.compareTo(availableBalance) > 0) {
+                    throw new RuntimeException(
+                            String.format("El nuevo cliente no tiene saldo suficiente para aplicar saldo a favor. " +
+                                    "Saldo disponible: %s, Monto requerido: %s", availableBalance, newCreditUsed));
+                }
+                UseCreditRequest useReq = UseCreditRequest.builder()
+                        .clientId(newClientId)
+                        .amount(newCreditUsed)
+                        .billingId(id)
+                        .notes("Saldo a favor aplicado por reasignación de factura " + existing.getBillNumber())
+                        .build();
+                clientCreditService.useCredit(useReq, createdBy);
+                log.info("Saldo a favor descontado al nuevo cliente {}: {}", newClientId, newCreditUsed);
+            }
+        } else {
+            // Mismo cliente — reconciliar la diferencia
+            BigDecimal diff = newCreditUsed.subtract(oldCreditUsed);
+            if (diff.compareTo(BigDecimal.ZERO) > 0) {
+                // Se usa MÁS saldo a favor → descontar la diferencia
+                BigDecimal availableBalance = clientCreditService.getClientCreditBalance(newClientId);
+                if (diff.compareTo(availableBalance) > 0) {
+                    throw new RuntimeException(
+                            String.format("El cliente no tiene saldo suficiente para aplicar el monto adicional. " +
+                                    "Saldo disponible: %s, Monto adicional requerido: %s", availableBalance, diff));
+                }
+                UseCreditRequest useReq = UseCreditRequest.builder()
+                        .clientId(newClientId)
+                        .amount(diff)
+                        .billingId(id)
+                        .notes("Ajuste de saldo a favor en edición de factura " + existing.getBillNumber())
+                        .build();
+                clientCreditService.useCredit(useReq, createdBy);
+                log.info("Saldo a favor adicional descontado al cliente {}: {}", newClientId, diff);
+            } else if (diff.compareTo(BigDecimal.ZERO) < 0) {
+                // Se usa MENOS saldo a favor → devolver la diferencia
+                BigDecimal toRestore = diff.abs();
+                AdjustCreditRequest restore = AdjustCreditRequest.builder()
+                        .clientId(newClientId)
+                        .amount(toRestore)
+                        .notes("Devolución parcial de saldo a favor en edición de factura " + existing.getBillNumber())
+                        .build();
+                clientCreditService.adjustCredit(restore, createdBy);
+                log.info("Saldo a favor parcialmente restaurado al cliente {}: {}", newClientId, toRestore);
+            }
+            // Si diff == 0 no hay nada que hacer en créditos
+        }
+
+        // ══════════════════════════════════════════════════════════════════════════
+        // RECONCILIACIÓN DE TIPO DE VENTA (CONTADO / CRÉDITO)
+        // ══════════════════════════════════════════════════════════════════════════
+
+        boolean saleTypeChanged = !oldSaleType.equals(newSaleType);
+
+        if (clientChanged && oldSaleType == EPaymentType.CREDITO) {
+            // Remover deuda del cliente anterior independientemente del nuevo tipo
+            clientAccountService.reduceDebtForReturn(
+                    oldClientId,
+                    totalBilling,
+                    null,
+                    "Deuda removida por reasignación de factura " + existing.getBillNumber(),
+                    createdBy);
+            log.info("Deuda removida del cliente anterior {}: {}", oldClientId, totalBilling);
+        }
+
+        if (clientChanged && newSaleType == EPaymentType.CREDITO) {
+            // Agregar deuda al nuevo cliente
+            clientAccountService.addDebt(newClientId, totalBilling);
+            log.info("Deuda agregada al nuevo cliente {}: {}", newClientId, totalBilling);
+        }
+
+        if (!clientChanged && saleTypeChanged) {
+            if (oldSaleType == EPaymentType.CONTADO && newSaleType == EPaymentType.CREDITO) {
+                // CONTADO → CRÉDITO: crear deuda
+                clientAccountService.addDebt(newClientId, totalBilling);
+                log.info("Venta cambiada a CRÉDITO. Deuda agregada al cliente {}: {}", newClientId, totalBilling);
+            } else if (oldSaleType == EPaymentType.CREDITO && newSaleType == EPaymentType.CONTADO) {
+                // CRÉDITO → CONTADO: eliminar deuda
+                clientAccountService.reduceDebtForReturn(
+                        oldClientId,
+                        totalBilling,
+                        null,
+                        "Deuda removida por cambio a venta de contado en factura " + existing.getBillNumber(),
+                        createdBy);
+                log.info("Venta cambiada a CONTADO. Deuda eliminada del cliente {}: {}", oldClientId, totalBilling);
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════════════
+        // ACTUALIZAR CAMPOS DE LA FACTURA
+        // ══════════════════════════════════════════════════════════════════════════
+
+        if (dto.getDateTimeRecord() != null) {
+            existing.setDateTimeRecord(dto.getDateTimeRecord());
+        }
+        if (dto.getClient() != null && dto.getClient().getId() != null) {
+            com.co.jarvis.entity.Client c = new com.co.jarvis.entity.Client();
+            c.setId(dto.getClient().getId());
+            c.setName(dto.getClient().getName());
+            c.setSurname(dto.getClient().getSurname());
+            c.setIdNumber(dto.getClient().getIdNumber());
+            c.setFullName(dto.getClient().getFullName());
+            c.setEmail(dto.getClient().getEmail());
+            c.setPhone(dto.getClient().getPhone());
+            existing.setClient(c);
+        }
+        if (dto.getPaymentMethods() != null) {
+            existing.setPaymentMethods(dto.getPaymentMethods());
+        }
+        existing.setSaleType(newSaleType);
+        if (dto.getBillingType() != null) {
+            existing.setBillingType(dto.getBillingType());
+        }
+        if (dto.getIsReportInvoice() != null) {
+            existing.setIsReportInvoice(dto.getIsReportInvoice());
+        }
+        if (dto.getReceivedValue() != null) {
+            existing.setReceivedValue(dto.getReceivedValue());
+        }
+        if (dto.getReturnedValue() != null) {
+            existing.setReturnedValue(dto.getReturnedValue());
+        }
+        if (dto.getPayments() != null) {
+            existing.setPayments(dto.getPayments().stream()
+                    .map(p -> {
+                        com.co.jarvis.entity.PaymentEntry entry = new com.co.jarvis.entity.PaymentEntry();
+                        entry.setMethod(p.getMethod());
+                        entry.setAmount(p.getAmount());
+                        entry.setReference(p.getReference());
+                        entry.setBankAccountId(p.getBankAccountId());
+                        entry.setBankAccountName(p.getBankAccountName());
+                        return entry;
+                    })
+                    .collect(java.util.stream.Collectors.toList()));
+        }
+
+        return mapper.mapToDto(repository.save(existing));
+    }
+
+    @Override
     public List<ProductSalesSummary> getProductSalesSummary(BillingReportFilterDto dto) {
         if (dto.hasFilterDate()) {
             return repository.getProductSalesSummaryByDate(
@@ -710,7 +904,7 @@ public class SaleServiceImpl implements SaleService {
         BillingConfigDto billingConfigDto = Optional.ofNullable(companyDto.getBillingConfig())
                 .orElseThrow(() -> new ResourceNotFoundException("La configuración de facturación no está disponible para la companyDto"));
 
-        Billing billing = repository.findFirstByOrderByDateTimeRecordDesc();
+        Billing billing = repository.findFirstByOrderByIdDesc();
         String prefixBilling = billingConfigDto.getPrefixBill();
 
         if (billing == null) {

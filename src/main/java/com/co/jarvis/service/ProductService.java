@@ -7,6 +7,7 @@ import com.co.jarvis.dto.BulkPresentationPriceUpdateResponse;
 import com.co.jarvis.dto.DisplayStock;
 import com.co.jarvis.dto.PaginationDto;
 import com.co.jarvis.dto.ProductDto;
+import com.co.jarvis.dto.ProductStockTraceDto;
 import com.co.jarvis.dto.UserDto;
 import com.co.jarvis.entity.Product;
 
@@ -47,4 +48,6 @@ public interface ProductService extends BaseService<ProductDto> {
      */
     ProductDto updatePresentation(String productId, String presentationId,
                                   com.co.jarvis.entity.Presentation patch);
+
+    ProductStockTraceDto getStockTrace(String productId);
 }

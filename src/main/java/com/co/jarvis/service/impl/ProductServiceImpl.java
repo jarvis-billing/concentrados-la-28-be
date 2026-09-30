@@ -7,13 +7,20 @@ import com.co.jarvis.dto.DisplayStock;
 import com.co.jarvis.dto.PaginationDto;
 import com.co.jarvis.dto.PresentationPriceUpdate;
 import com.co.jarvis.dto.ProductDto;
+import com.co.jarvis.dto.ProductStockTraceDto;
 import com.co.jarvis.dto.UserDto;
 import com.co.jarvis.entity.AuditEntry;
+import com.co.jarvis.entity.Billing;
+import com.co.jarvis.entity.PhysicalInventory;
 import com.co.jarvis.entity.Presentation;
 import com.co.jarvis.entity.Product;
+import com.co.jarvis.entity.PurchaseInvoice;
 import com.co.jarvis.enums.EAuditAction;
 import com.co.jarvis.enums.ESale;
+import com.co.jarvis.repository.BillingRepository;
+import com.co.jarvis.repository.PhysicalInventoryRepository;
 import com.co.jarvis.repository.ProductRepository;
+import com.co.jarvis.repository.PurchaseInvoiceRepository;
 import com.co.jarvis.service.ProductService;
 import com.co.jarvis.util.DateTimeUtil;
 import com.co.jarvis.util.UnitConverter;
@@ -34,6 +41,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import org.springframework.data.domain.Sort;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -59,6 +68,15 @@ public class ProductServiceImpl implements ProductService {
 
     @Autowired
     private ProductRepository repository;
+
+    @Autowired
+    private PurchaseInvoiceRepository purchaseInvoiceRepository;
+
+    @Autowired
+    private BillingRepository billingRepository;
+
+    @Autowired
+    private PhysicalInventoryRepository physicalInventoryRepository;
 
     GenericMapper<Product, ProductDto> mapper = new GenericMapper<>(Product.class, ProductDto.class);
     PaginationMapper<Product, ProductDto> paginationMapper = new PaginationMapper<>(Product.class, ProductDto.class);
@@ -669,6 +687,69 @@ public class ProductServiceImpl implements ProductService {
             .unit("")
             .label("0")
             .computedAt(Instant.now().toString())
+            .build();
+    }
+
+    @Override
+    public ProductStockTraceDto getStockTrace(String productId) {
+        Sort dateDesc = Sort.by(Sort.Direction.DESC, "date");
+
+        List<PurchaseInvoice> purchases = purchaseInvoiceRepository.findByItemProductId(productId, dateDesc);
+        List<ProductStockTraceDto.PurchaseTrace> purchaseTraces = purchases.stream()
+            .limit(3)
+            .map(pi -> {
+                BigDecimal qty = pi.getItems() == null ? BigDecimal.ZERO :
+                    pi.getItems().stream()
+                        .filter(item -> productId.equals(item.getProductId()))
+                        .map(item -> item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                return ProductStockTraceDto.PurchaseTrace.builder()
+                    .purchaseDate(pi.getInvoiceDate() != null ? pi.getInvoiceDate().toString() : null)
+                    .registrationDate(pi.getDate() != null ? pi.getDate().toString() : null)
+                    .supplier(pi.getSupplier() != null ? pi.getSupplier().getName() : null)
+                    .quantity(qty)
+                    .build();
+            })
+            .collect(Collectors.toList());
+
+        List<PhysicalInventory> counts = physicalInventoryRepository.findByProductId(productId);
+        counts.sort((a, b) -> {
+            if (a.getDate() == null) return 1;
+            if (b.getDate() == null) return -1;
+            return b.getDate().compareTo(a.getDate());
+        });
+        List<ProductStockTraceDto.InventoryCountTrace> countTraces = counts.stream()
+            .limit(3)
+            .map(pi -> ProductStockTraceDto.InventoryCountTrace.builder()
+                .date(pi.getDate() != null ? pi.getDate().toString() : null)
+                .physicalStock(pi.getPhysicalStock())
+                .systemStock(pi.getSystemStock())
+                .difference(pi.getDifference())
+                .build())
+            .collect(Collectors.toList());
+
+        List<Billing> billings = billingRepository.findBySaleDetailProductId(
+            productId, Sort.by(Sort.Direction.DESC, "dateTimeRecord"));
+        List<ProductStockTraceDto.SaleTrace> saleTraces = billings.stream()
+            .limit(3)
+            .map(billing -> {
+                BigDecimal qty = billing.getSaleDetails() == null ? BigDecimal.ZERO :
+                    billing.getSaleDetails().stream()
+                        .filter(d -> d.getProduct() != null && productId.equals(d.getProduct().getId()))
+                        .map(d -> d.getAmount() != null ? d.getAmount() : BigDecimal.ZERO)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                return ProductStockTraceDto.SaleTrace.builder()
+                    .saleDate(billing.getDateTimeRecord() != null ? billing.getDateTimeRecord().toString() : null)
+                    .invoiceNumber(billing.getBillNumber())
+                    .quantity(qty)
+                    .build();
+            })
+            .collect(Collectors.toList());
+
+        return ProductStockTraceDto.builder()
+            .lastPurchases(purchaseTraces)
+            .lastInventoryCounts(countTraces)
+            .lastSales(saleTraces)
             .build();
     }
 }

@@ -29,4 +29,6 @@ public interface SaleService extends BaseService<BillingDto> {
     Page<BillingDto> findAllBillingPaged(BillingReportFilterPagedDto dto);
 
     SalesTotalsResponse getSalesTotals(BillingReportFilterDto dto);
+
+    BillingDto updateBilling(String id, BillingDto dto);
 }

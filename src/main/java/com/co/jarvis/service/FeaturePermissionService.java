@@ -21,4 +21,10 @@ public interface FeaturePermissionService {
 
     /** Revoca (desactiva) un permiso por su ID */
     FeaturePermissionDto revoke(String id);
+
+    /**
+     * Comprueba si una funcionalidad global está activa, sin importar el rol.
+     * Retorna true si existe al menos un permiso activo y no expirado para la featureKey.
+     */
+    boolean isEnabled(String featureKey);
 }

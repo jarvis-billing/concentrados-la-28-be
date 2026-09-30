@@ -4,6 +4,8 @@ import com.co.jarvis.dto.ProductSalesSummary;
 import com.co.jarvis.entity.Billing;
 import org.springframework.data.mongodb.repository.Aggregation;
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
+import org.springframework.data.domain.Sort;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -11,6 +13,9 @@ import java.util.List;
 public interface BillingRepository extends MongoRepository<Billing, String> {
 
     Billing findByBillNumber(String billingNumber);
+
+    /** Ordena por _id desc — ObjectId embeds insertion timestamp, so this is always the last inserted document */
+    Billing findFirstByOrderByIdDesc();
 
     Billing findFirstByOrderByDateTimeRecordDesc();
 
@@ -89,5 +94,8 @@ public interface BillingRepository extends MongoRepository<Billing, String> {
             "{ '$sort': { 'totalAmount': -1 } }"
     })
     List<ProductSalesSummary> getProductSalesSummaryByDateAndProduct(OffsetDateTime from, OffsetDateTime to, String productBarcode);
+
+    @Query("{ 'saleDetails': { '$elemMatch': { 'product.id': ?0 } } }")
+    List<Billing> findBySaleDetailProductId(String productId, Sort sort);
 
 }

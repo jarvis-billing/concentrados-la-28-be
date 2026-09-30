@@ -92,6 +92,15 @@ public class SaleController extends GenericController<BillingDto, SaleService> {
                 .body(service.getSalesTotals(dto));
     }
 
+    @Override
+    @PutMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<BillingDto> update(@RequestBody BillingDto dto, @PathVariable String id) {
+        logger.info("SaleController -> update (edit billing): id={}", id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(service.updateBilling(id, dto));
+    }
+
     @PostMapping(value = "/report/product/summary", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<List<ProductSalesSummary>> getProductSalesSummary(@RequestBody BillingReportFilterDto dto) {
         return ResponseEntity.ok()

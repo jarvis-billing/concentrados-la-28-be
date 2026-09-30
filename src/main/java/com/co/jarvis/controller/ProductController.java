@@ -4,6 +4,7 @@ import com.co.jarvis.dto.BulkPresentationPriceUpdateRequest;
 import com.co.jarvis.dto.BulkPresentationPriceUpdateResponse;
 import com.co.jarvis.dto.PaginationDto;
 import com.co.jarvis.dto.ProductDto;
+import com.co.jarvis.dto.ProductStockTraceDto;
 import com.co.jarvis.dto.UserDto;
 import com.co.jarvis.service.CatalogService;
 import com.co.jarvis.service.ProductService;
@@ -125,5 +126,11 @@ public class ProductController extends GenericController<ProductDto, ProductServ
     public ResponseEntity<Map<String, String>> generatedProductCode() {
         logger.info("ProductController -> generatedProductCode");
         return ResponseEntity.ok(Map.of("value", service.generateNextProductCode()));
+    }
+
+    @GetMapping("/{id}/stock-trace")
+    public ResponseEntity<ProductStockTraceDto> getStockTrace(@PathVariable String id) {
+        logger.info("ProductController -> getStockTrace: productId={}", id);
+        return ResponseEntity.ok(service.getStockTrace(id));
     }
 }

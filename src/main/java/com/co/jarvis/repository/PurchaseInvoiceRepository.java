@@ -24,4 +24,7 @@ public interface PurchaseInvoiceRepository extends MongoRepository<PurchaseInvoi
     // El service aplica fallback a unitCost cuando unitTotalCost es null.
     @Query("{ 'items.presentationBarcode': ?0 }")
     List<PurchaseInvoice> findByItemPresentationBarcodeWithCost(String presentationBarcode, Sort sort);
+
+    @Query("{ 'items.productId': ?0 }")
+    List<PurchaseInvoice> findByItemProductId(String productId, Sort sort);
 }

@@ -104,10 +104,18 @@ public class UserServiceImpl implements UserService {
             Optional<User> opEntity = repository.findById(id);
             User entity = opEntity.orElseThrow(()
                     -> new ResourceNotFoundException(MessageConstants.RESOURCE_NOT_FOUND));
-            if (!entity.getId().equalsIgnoreCase(dto.getId())) {
+            if (dto.getNumberIdentity() == null || dto.getNumberIdentity().isBlank()) {
+                dto.setNumberIdentity(entity.getNumberIdentity());
+            }
+            // Solo verificar duplicado si el número de identidad cambió
+            if (!dto.getNumberIdentity().equalsIgnoreCase(entity.getNumberIdentity())) {
                 isExistUser(dto);
             }
-            dto.setPassword(passwordEncoder.encode(dto.getPassword()));
+            if (dto.getPassword() != null && !dto.getPassword().isBlank()) {
+                dto.setPassword(passwordEncoder.encode(dto.getPassword()));
+            } else {
+                dto.setPassword(entity.getPassword());
+            }
             User userToUpdate = mapper.mapToEntity(dto);
             userToUpdate.setId(id);
             return mapper.mapToDto(repository.save(userToUpdate));

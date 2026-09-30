@@ -3,12 +3,15 @@ package com.co.jarvis.controller;
 import com.co.jarvis.dto.UserDto;
 import com.co.jarvis.dto.inventorycount.*;
 import com.co.jarvis.dto.inventorycount.HideUncountedResultDto;
+import com.co.jarvis.dto.inventorycount.PhysicalInventoryValueReportDto;
+import com.co.jarvis.dto.inventorycount.PhysicalInventoryValueReportFilter;
 import com.co.jarvis.entity.InventoryCountSession;
 import com.co.jarvis.service.InventoryCountService;
 import com.co.jarvis.service.impl.InventoryCountServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -120,5 +123,42 @@ public class InventoryCountController {
     public ResponseEntity<HideUncountedResultDto> hideUncounted(@PathVariable String id) {
         log.info("InventoryCountController -> hideUncounted: {}", id);
         return ResponseEntity.ok(inventoryCountService.hideUncountedPresentations(id));
+    }
+
+    /** Retorna los datos del reporte de valor de inventario como JSON. */
+    @PostMapping("/report/value-data")
+    public ResponseEntity<PhysicalInventoryValueReportDto> getValueReportData(
+            @RequestBody PhysicalInventoryValueReportFilter filter) {
+        log.info("InventoryCountController -> getValueReportData from={} to={}", filter.getFromDate(), filter.getToDate());
+        return ResponseEntity.ok(inventoryCountService.getValueReportData(filter));
+    }
+
+    /**
+     * Elimina una fila sin código de barras: borra el registro de conteo físico y
+     * las presentaciones sin código del producto en el catálogo.
+     */
+    @DeleteMapping("/report/null-barcode-row")
+    public ResponseEntity<Void> deleteNullBarcodeRow(
+            @RequestParam String productId,
+            @RequestParam String piId) {
+        log.info("InventoryCountController -> deleteNullBarcodeRow productId={} piId={}", productId, piId);
+        inventoryCountService.deleteNullBarcodeRow(productId, piId);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** Genera un PDF con el valor de inventario por conteo físico en el rango de fechas dado. */
+    @PostMapping(value = "/report/value-pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> generateValuePdf(@RequestBody PhysicalInventoryValueReportFilter filter) {
+        log.info("InventoryCountController -> generateValuePdf from={} to={}", filter.getFromDate(), filter.getToDate());
+        try {
+            byte[] pdf = inventoryCountService.generateValuePdf(filter);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=inventario-valor.pdf")
+                    .contentType(MediaType.APPLICATION_PDF)
+                    .body(pdf);
+        } catch (Exception e) {
+            log.error("Error generando reporte de valor de inventario", e);
+            return ResponseEntity.internalServerError().build();
+        }
     }
 }

@@ -28,6 +28,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -223,7 +224,7 @@ public class ClientCreditServiceImpl implements ClientCreditService {
         }
 
         if (Boolean.TRUE.equals(filter.getOnlyWithBalance())) {
-            criteriaList.add(Criteria.where("currentBalance").gt(0));
+            criteriaList.add(Criteria.where("currentBalance").gt(BigDecimal.ZERO));
         }
 
         Query query = new Query();
@@ -234,31 +235,26 @@ public class ClientCreditServiceImpl implements ClientCreditService {
         List<ClientCredit> credits = mongoTemplate.find(query, ClientCredit.class);
 
         return credits.stream()
-                .filter(credit -> filterByDateRange(credit, filter))
+                // When filtering by balance, show ALL clients with balance regardless of date range.
+                // Date range only acts as a transaction-level filter when NOT using onlyWithBalance.
+                .filter(credit -> Boolean.TRUE.equals(filter.getOnlyWithBalance()) || filterByDateRange(credit, filter))
                 .filter(credit -> filterByTransactionType(credit, filter))
                 .map(this::mapToCreditSummary)
+                .sorted(Comparator.comparing(CreditSummary::getClientName,
+                        Comparator.nullsLast(String::compareToIgnoreCase)))
                 .collect(Collectors.toList());
     }
 
     private boolean filterByDateRange(ClientCredit credit, CreditReportFilter filter) {
-        if (filter.getFromDate() == null && filter.getToDate() == null) {
+        if (filter.getFromDate() == null && filter.getToDate() == null) return true;
+        if (credit.getTransactions() == null || credit.getTransactions().isEmpty()) return false;
+        return credit.getTransactions().stream().anyMatch(t -> {
+            LocalDateTime td = t.getTransactionDate();
+            if (td == null) return false;
+            if (filter.getFromDate() != null && td.toLocalDate().isBefore(filter.getFromDate())) return false;
+            if (filter.getToDate() != null && td.toLocalDate().isAfter(filter.getToDate())) return false;
             return true;
-        }
-
-        LocalDateTime createdAt = credit.getCreatedAt();
-        if (createdAt == null) {
-            return true;
-        }
-
-        if (filter.getFromDate() != null && createdAt.isBefore(filter.getFromDate().atStartOfDay())) {
-            return false;
-        }
-
-        if (filter.getToDate() != null && createdAt.isAfter(filter.getToDate().atTime(LocalTime.MAX))) {
-            return false;
-        }
-
-        return true;
+        });
     }
 
     private boolean filterByTransactionType(ClientCredit credit, CreditReportFilter filter) {
@@ -275,6 +271,32 @@ public class ClientCreditServiceImpl implements ClientCreditService {
         String clientName = client != null ? client.getFullName() : "N/A";
         String clientIdNumber = client != null ? client.getIdNumber() : "N/A";
 
+        List<CreditTransaction> transactions = credit.getTransactions() != null
+                ? credit.getTransactions().stream()
+                        .sorted(Comparator.comparing(CreditTransaction::getTransactionDate,
+                                Comparator.nullsLast(Comparator.reverseOrder())))
+                        .collect(Collectors.toList())
+                : Collections.emptyList();
+
+        // Last incoming transaction (DEPOSIT or ADJUSTMENT with positive amount)
+        CreditTransaction lastDeposit = transactions.stream()
+                .filter(t -> t.getType() == ECreditTransactionType.DEPOSIT
+                          || t.getType() == ECreditTransactionType.ADJUSTMENT)
+                .max(Comparator.comparing(CreditTransaction::getTransactionDate,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .orElse(null);
+
+        String lastDepositMethod = null;
+        String lastDepositBankAccount = null;
+        LocalDateTime lastDepositDate = null;
+        if (lastDeposit != null) {
+            lastDepositDate = lastDeposit.getTransactionDate();
+            if (lastDeposit.getPaymentMethod() != null) {
+                lastDepositMethod = lastDeposit.getPaymentMethod().name();
+            }
+            lastDepositBankAccount = lastDeposit.getBankAccountName();
+        }
+
         return CreditSummary.builder()
                 .clientId(credit.getClientId())
                 .clientName(clientName)
@@ -283,6 +305,10 @@ public class ClientCreditServiceImpl implements ClientCreditService {
                 .totalDeposited(credit.getTotalDeposited())
                 .totalUsed(credit.getTotalUsed())
                 .lastTransactionDate(credit.getLastTransactionDate())
+                .transactions(transactions)
+                .lastDepositDate(lastDepositDate)
+                .lastDepositMethod(lastDepositMethod)
+                .lastDepositBankAccount(lastDepositBankAccount)
                 .build();
     }
 
