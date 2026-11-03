@@ -33,6 +33,9 @@ public interface ClientAccountService {
 
     PagedAccountReport generatePagedReport(AccountReportFilter filter);
 
+    /** Resumen liviano de cartera: solo clientes con saldo > 0, ordenado por saldo descendente. */
+    List<com.co.jarvis.dto.AccountReceivableRow> generateReceivableSummary(String clientId);
+
     AccountTransaction registerManualDebt(ManualDebtRequest request, String createdBy);
 
     AccountTransaction reduceDebtForReturn(String clientId, BigDecimal amount, String returnId, String notes, String createdBy);

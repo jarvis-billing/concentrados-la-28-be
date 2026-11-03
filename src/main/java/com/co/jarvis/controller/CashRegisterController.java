@@ -210,6 +210,31 @@ public class CashRegisterController {
         }
     }
 
+    /**
+     * GET /api/cash-register/config
+     * Configuración del arqueo (nota obligatoria por diferencia y umbral)
+     */
+    @GetMapping("/config")
+    public ResponseEntity<CashCountConfigDto> getConfig() {
+        log.info("CashRegisterController -> getConfig");
+        return ResponseEntity.ok(cashRegisterService.getConfig());
+    }
+
+    /**
+     * PUT /api/cash-register/config
+     * Actualiza la configuración del arqueo
+     */
+    @PutMapping(value = "/config", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> updateConfig(@RequestBody CashCountConfigDto request) {
+        log.info("CashRegisterController -> updateConfig");
+        try {
+            return ResponseEntity.ok(cashRegisterService.updateConfig(request, getAuthenticatedUser()));
+        } catch (RuntimeException e) {
+            log.error("Error updating cash count config: {}", e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     private UserDto getAuthenticatedUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof UserDto user) {

@@ -678,12 +678,11 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
     /**
      * Calcula para cada item de la factura:
      * 1. vatAmount = unitCost * quantity * vatRate / 100
-     * 2. freightAmount = freightRate distribuido proporcionalmente por totalWeightKg
-     *                    entre items con applyFreight=true
+     * 2. freightAmount = freightRate (flete por unidad) * quantity, para items con applyFreight=true
      * 3. unitTotalCost = unitCost + (vatAmount / quantity) + (freightAmount / quantity)
      *
      * Si quantity == 0 o null, las divisiones devuelven 0.
-     * Si no hay items con applyFreight=true, freightAmount = 0 para todos.
+     * Si el item no aplica flete o freightRate es 0, freightAmount = 0.
      */
     private void calculateItemCosts(PurchaseInvoice invoice) {
         List<PurchaseInvoiceItem> items = invoice.getItems();
@@ -704,32 +703,17 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             item.setVatAmount(vatAmount);
         }
 
-        // 2. Calcular peso total de items con applyFreight=true
-        BigDecimal totalWeight = items.stream()
-            .filter(item -> Boolean.TRUE.equals(item.getApplyFreight()))
-            .map(item -> item.getTotalWeightKg() != null ? item.getTotalWeightKg() : BigDecimal.ZERO)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // 3. Distribuir freightRate proporcionalmente por peso
-        if (totalWeight.compareTo(BigDecimal.ZERO) > 0 && freightRate.compareTo(BigDecimal.ZERO) > 0) {
-            for (PurchaseInvoiceItem item : items) {
-                if (Boolean.TRUE.equals(item.getApplyFreight())) {
-                    BigDecimal itemWeight = item.getTotalWeightKg() != null ? item.getTotalWeightKg() : BigDecimal.ZERO;
-                    BigDecimal freightAmount = freightRate
-                        .multiply(itemWeight)
-                        .divide(totalWeight, 2, RoundingMode.HALF_UP);
-                    item.setFreightAmount(freightAmount);
-                } else {
-                    item.setFreightAmount(BigDecimal.ZERO);
-                }
-            }
-        } else {
-            for (PurchaseInvoiceItem item : items) {
+        // 2. Flete por item: freightRate es flete por unidad (misma regla que la pantalla de compras)
+        for (PurchaseInvoiceItem item : items) {
+            BigDecimal quantity = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
+            if (Boolean.TRUE.equals(item.getApplyFreight()) && freightRate.compareTo(BigDecimal.ZERO) > 0) {
+                item.setFreightAmount(freightRate.multiply(quantity).setScale(2, RoundingMode.HALF_UP));
+            } else {
                 item.setFreightAmount(BigDecimal.ZERO);
             }
         }
 
-        // 4. Calcular unitTotalCost para cada item
+        // 3. Calcular unitTotalCost para cada item
         for (PurchaseInvoiceItem item : items) {
             BigDecimal unitCost = item.getUnitCost() != null ? item.getUnitCost() : BigDecimal.ZERO;
             BigDecimal quantity = item.getQuantity() != null ? item.getQuantity() : BigDecimal.ZERO;
@@ -763,16 +747,14 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             for (PurchaseInvoiceItem item : invoice.getItems()) {
                 if (!presentationId.equals(item.getPresentationBarcode())) continue;
 
-                // Fallback: facturas antiguas pueden no tener unitTotalCost calculado
                 BigDecimal effectiveUnitCost = item.getUnitCost() != null
                         ? item.getUnitCost() : BigDecimal.ZERO;
-                BigDecimal effectiveUnitTotalCost = item.getUnitTotalCost() != null
-                        ? item.getUnitTotalCost() : effectiveUnitCost;
 
                 // Ignorar ítems sin ningún costo registrado
                 if (effectiveUnitCost.compareTo(BigDecimal.ZERO) == 0
-                        && effectiveUnitTotalCost.compareTo(BigDecimal.ZERO) == 0) continue;
+                        && (item.getUnitTotalCost() == null || item.getUnitTotalCost().compareTo(BigDecimal.ZERO) == 0)) continue;
 
+                // Calcular componentes por unidad primero, para usarlos en el fallback de unitTotalCost
                 BigDecimal vatPerUnit = item.getVatAmount() != null
                         && item.getQuantity() != null
                         && item.getQuantity().compareTo(BigDecimal.ZERO) > 0
@@ -784,6 +766,19 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
                         && item.getQuantity().compareTo(BigDecimal.ZERO) > 0
                     ? item.getFreightAmount().divide(item.getQuantity(), 2, RoundingMode.HALF_UP)
                     : BigDecimal.ZERO;
+
+                // Facturas guardadas con freightAmount=0 por el reparto anterior por peso:
+                // el flete por unidad es el freightRate de la factura
+                if (freightPerUnit.compareTo(BigDecimal.ZERO) == 0
+                        && Boolean.TRUE.equals(item.getApplyFreight())
+                        && invoice.getFreightRate() != null
+                        && invoice.getFreightRate().compareTo(BigDecimal.ZERO) > 0) {
+                    freightPerUnit = invoice.getFreightRate();
+                }
+
+                BigDecimal effectiveUnitTotalCost = effectiveUnitCost.compareTo(BigDecimal.ZERO) > 0
+                        ? effectiveUnitCost.add(vatPerUnit).add(freightPerUnit)
+                        : item.getUnitTotalCost();
 
                 return PurchaseLastCostInfo.builder()
                         .presentationId(presentationId)

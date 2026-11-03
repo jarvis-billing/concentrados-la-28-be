@@ -1,5 +1,6 @@
 package com.co.jarvis.dto.cashregister;
 
+import com.co.jarvis.enums.ECashCountMode;
 import com.co.jarvis.enums.ECashCountStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -21,6 +22,7 @@ public class CashCountSessionDto implements Serializable {
     private BigDecimal openingBalance;
     private List<CashDenominationDto> cashDenominations;
     private BigDecimal totalCashCounted;
+    private ECashCountMode countMode;
     private BigDecimal expectedCashAmount;
     private BigDecimal expectedCashTotal;
     private BigDecimal expectedTransferAmount;

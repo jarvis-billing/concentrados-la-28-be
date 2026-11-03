@@ -90,6 +90,12 @@ public class ClientAccountController {
         return ResponseEntity.ok(report);
     }
 
+    @GetMapping("/report/receivable-summary")
+    public ResponseEntity<List<com.co.jarvis.dto.AccountReceivableRow>> getReceivableSummary(
+            @RequestParam(required = false) String clientId) {
+        return ResponseEntity.ok(clientAccountService.generateReceivableSummary(clientId));
+    }
+
     @PostMapping(value = "/report/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     public ResponseEntity<byte[]> generateReportPdf(@RequestBody AccountReportFilter filter) {
         log.info("ClientAccountController -> generateReportPdf");

@@ -34,6 +34,11 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Objects;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import com.co.jarvis.dto.AccountReceivableRow;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -175,6 +180,62 @@ public class ClientAccountServiceImpl implements ClientAccountService {
                 .map(acc -> mapToAccountSummary(acc, hasDateFilter ? from : null,
                                                     hasDateFilter ? to   : null))
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<AccountReceivableRow> generateReceivableSummary(String clientId) {
+        long start = System.currentTimeMillis();
+
+        // Solo los campos necesarios: sin facturas, sin transacciones y sin resolver el @DBRef del cliente
+        Query query = new Query();
+        if (clientId != null && !clientId.isBlank()) {
+            query.addCriteria(Criteria.where("clientId").is(clientId));
+        }
+        query.fields().include("clientId", "currentBalance", "lastPaymentDate",
+                "payments.amount", "payments.paymentDate");
+
+        // El saldo se filtra en memoria por el mismatch de tipos de BigDecimal en MongoDB
+        List<ClientAccount> accounts = mongoTemplate.find(query, ClientAccount.class).stream()
+                .filter(a -> a.getCurrentBalance() != null && a.getCurrentBalance().compareTo(BigDecimal.ZERO) > 0)
+                .collect(Collectors.toList());
+
+        // Un solo query para todos los clientes en lugar de uno por cuenta
+        Set<String> clientIds = accounts.stream().map(ClientAccount::getClientId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<String, Client> clients = new HashMap<>();
+        clientRepository.findAllById(clientIds).forEach(c -> clients.put(c.getId(), c));
+
+        List<AccountReceivableRow> rows = accounts.stream().map(a -> {
+            Client c = clients.get(a.getClientId());
+            AccountPayment last = a.getPayments() == null ? null : a.getPayments().stream()
+                    .filter(p -> p.getPaymentDate() != null)
+                    .max(Comparator.comparing(AccountPayment::getPaymentDate))
+                    .orElse(null);
+            return AccountReceivableRow.builder()
+                    .clientId(a.getClientId())
+                    .clientName(buildClientName(c))
+                    .clientNickname(c != null ? c.getNickname() : null)
+                    .clientPhone(c != null ? c.getPhone() : null)
+                    .clientAddress(c != null ? c.getAddress() : null)
+                    .currentBalance(a.getCurrentBalance())
+                    .lastPaymentDate(last != null ? last.getPaymentDate() : a.getLastPaymentDate())
+                    .lastPaymentAmount(last != null ? last.getAmount() : null)
+                    .build();
+        })
+        .sorted(Comparator.comparing(AccountReceivableRow::getCurrentBalance).reversed())
+        .collect(Collectors.toList());
+
+        log.info("generateReceivableSummary -> {} clientes con saldo en {} ms",
+                rows.size(), System.currentTimeMillis() - start);
+        return rows;
+    }
+
+    private String buildClientName(Client c) {
+        if (c == null) return "N/A";
+        String full = ((c.getName() != null ? c.getName().trim() : "") + " "
+                + (c.getSurname() != null ? c.getSurname().trim() : "")).trim().replaceAll("\\s+", " ");
+        if (!full.isEmpty()) return full;
+        return c.getFullName() != null ? c.getFullName().trim() : "N/A";
     }
 
     @Override

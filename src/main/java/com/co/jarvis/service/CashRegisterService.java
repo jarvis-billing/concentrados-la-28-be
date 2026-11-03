@@ -73,4 +73,14 @@ public interface CashRegisterService {
      * Lista los retiros de propietario en un rango de fechas.
      */
     List<OwnerWithdrawalDto> listOwnerWithdrawals(LocalDate fromDate, LocalDate toDate);
+
+    /**
+     * Obtiene la configuración del arqueo (umbral de diferencia y si exige nota).
+     */
+    CashCountConfigDto getConfig();
+
+    /**
+     * Actualiza la configuración del arqueo.
+     */
+    CashCountConfigDto updateConfig(CashCountConfigDto request, UserDto user);
 }

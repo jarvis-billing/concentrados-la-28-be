@@ -36,6 +36,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
     private final InternalTransferRepository internalTransferRepository;
     private final ExpenseRepository expenseRepository;
     private final MerchandiseReturnRepository merchandiseReturnRepository;
+    private final CashCountConfigRepository cashCountConfigRepository;
     private final MongoTemplate mongoTemplate;
 
     // Denominaciones colombianas
@@ -195,15 +196,28 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                     .build();
         }
 
-        // Procesar denominaciones
-        List<CashDenomination> denominations = processDenominations(request.getCashDenominations());
-        session.setCashDenominations(denominations);
-
-        // Calcular total contado
-        BigDecimal totalCounted = denominations.stream()
-                .map(CashDenomination::getSubtotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Total contado: digitado directamente (modo TOTAL) o suma de denominaciones
+        ECashCountMode countMode = request.getCountMode() != null
+                ? request.getCountMode() : ECashCountMode.DENOMINACIONES;
+        BigDecimal totalCounted;
+        if (countMode == ECashCountMode.TOTAL) {
+            totalCounted = request.getTotalCashCounted() != null
+                    ? request.getTotalCashCounted() : BigDecimal.ZERO;
+            if (totalCounted.compareTo(BigDecimal.ZERO) < 0) {
+                throw new RuntimeException("El efectivo contado no puede ser negativo");
+            }
+            session.setCashDenominations(new ArrayList<>());
+        } else {
+            List<CashDenomination> denominations = processDenominations(request.getCashDenominations());
+            session.setCashDenominations(denominations);
+            totalCounted = denominations.stream()
+                    .map(CashDenomination::getSubtotal)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+        session.setCountMode(countMode);
         session.setTotalCashCounted(totalCounted);
+        List<AuditEntry> trail = ensureAuditTrail(session);
+        trail.get(trail.size() - 1).setDetails("Modo de conteo: " + countMode.name());
 
         // Obtener datos del resumen diario
         DailySummaryResponse dailySummary = getDailySummary(request.getSessionDate());
@@ -231,7 +245,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         log.info("  cashExpense (EFEC): {}", dailySummary.getTotalExpense());
         log.info("  expectedCashAmount: {} (income - expense)", dailySummary.getExpectedCashAmount());
         log.info("  expectedCashTotal:  {} (opening + expectedCashAmount)", expectedCashTotal);
-        log.info("  countedCash:        {} (suma denominaciones)", totalCounted);
+        log.info("  countedCash:        {} (modo {})", totalCounted, countMode);
         log.info("  difference:         {} (counted - expectedTotal)", totalCounted.subtract(expectedCashTotal));
         log.info("  transacciones:      {}", dailySummary.getTransactions() != null ? dailySummary.getTransactions().size() : 0);
         log.info("=== FIN DIAGNÓSTICO ===");
@@ -274,6 +288,8 @@ public class CashRegisterServiceImpl implements CashRegisterService {
         if (session.getStatus() != ECashCountStatus.EN_PROGRESO) {
             throw new RuntimeException("Solo se pueden cerrar arqueos en progreso");
         }
+
+        validateDifferenceNote(session, request.getNotes());
 
         session.setStatus(ECashCountStatus.CERRADO);
         ensureAuditTrail(session).add(AuditEntry.builder()
@@ -969,6 +985,7 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .openingBalance(session.getOpeningBalance())
                 .cashDenominations(denominationDtos)
                 .totalCashCounted(session.getTotalCashCounted())
+                .countMode(session.getCountMode() != null ? session.getCountMode() : ECashCountMode.DENOMINACIONES)
                 .expectedCashAmount(session.getExpectedCashAmount())
                 .expectedCashTotal(session.getExpectedCashTotal())
                 .expectedTransferAmount(session.getExpectedTransferAmount())
@@ -984,6 +1001,65 @@ public class CashRegisterServiceImpl implements CashRegisterService {
                 .auditTrail(auditDtos)
                 .snapshots(snapshotDtos)
                 .build();
+    }
+
+    @Override
+    public CashCountConfigDto getConfig() {
+        return mapConfigToDto(loadConfig());
+    }
+
+    @Override
+    public CashCountConfigDto updateConfig(CashCountConfigDto request, UserDto user) {
+        log.info("CashRegisterServiceImpl -> updateConfig: {}", request);
+        CashCountConfig config = loadConfig();
+        if (request.getRequireNoteOnDifference() != null) {
+            config.setRequireNoteOnDifference(request.getRequireNoteOnDifference());
+        }
+        if (request.getDifferenceThreshold() != null) {
+            if (request.getDifferenceThreshold().compareTo(BigDecimal.ZERO) < 0) {
+                throw new RuntimeException("El umbral de diferencia no puede ser negativo");
+            }
+            config.setDifferenceThreshold(request.getDifferenceThreshold());
+        }
+        config.setUpdatedAt(LocalDateTime.now());
+        config.setUpdatedBy(user != null ? user.getFullName() : "unknown");
+        return mapConfigToDto(cashCountConfigRepository.save(config));
+    }
+
+    private CashCountConfig loadConfig() {
+        return cashCountConfigRepository.findById(CashCountConfig.SINGLETON_ID)
+                .orElseGet(() -> CashCountConfig.builder().id(CashCountConfig.SINGLETON_ID).build());
+    }
+
+    private CashCountConfigDto mapConfigToDto(CashCountConfig config) {
+        return CashCountConfigDto.builder()
+                .requireNoteOnDifference(config.isRequireNoteOnDifference())
+                .differenceThreshold(config.getDifferenceThreshold() != null
+                        ? config.getDifferenceThreshold() : CashCountConfig.DEFAULT_THRESHOLD)
+                .updatedAt(config.getUpdatedAt())
+                .updatedBy(config.getUpdatedBy())
+                .build();
+    }
+
+    /**
+     * Si la configuración lo exige, no permite cerrar un arqueo cuya diferencia
+     * supere el umbral sin una nota de cierre que la explique.
+     */
+    private void validateDifferenceNote(CashCountSession session, String closeNotes) {
+        CashCountConfig config = loadConfig();
+        if (!config.isRequireNoteOnDifference()) return;
+
+        BigDecimal threshold = config.getDifferenceThreshold() != null
+                ? config.getDifferenceThreshold() : CashCountConfig.DEFAULT_THRESHOLD;
+        BigDecimal difference = session.getCashDifference() != null
+                ? session.getCashDifference() : BigDecimal.ZERO;
+        if (difference.abs().compareTo(threshold) <= 0) return;
+
+        if (closeNotes == null || closeNotes.isBlank()) {
+            throw new RuntimeException(String.format(
+                    "La diferencia de caja (%s) supera el umbral de %s. Debe registrar una nota explicando la diferencia.",
+                    difference.toPlainString(), threshold.toPlainString()));
+        }
     }
 
     private List<AuditEntry> ensureAuditTrail(CashCountSession session) {

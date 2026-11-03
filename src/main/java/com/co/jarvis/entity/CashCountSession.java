@@ -1,5 +1,6 @@
 package com.co.jarvis.entity;
 
+import com.co.jarvis.enums.ECashCountMode;
 import com.co.jarvis.enums.ECashCountStatus;
 import jakarta.persistence.Id;
 import lombok.AllArgsConstructor;
@@ -35,7 +36,8 @@ public class CashCountSession {
     @Builder.Default
     private List<CashDenomination> cashDenominations = new ArrayList<>();  // Denominaciones contadas
 
-    private BigDecimal totalCashCounted;        // Total efectivo contado (suma de denominaciones)
+    private BigDecimal totalCashCounted;        // Total efectivo contado (digitado o suma de denominaciones)
+    private ECashCountMode countMode;           // Cómo se capturó el efectivo (null en arqueos antiguos = DENOMINACIONES)
     private BigDecimal expectedCashAmount;      // Neto efectivo del día (ingresos - egresos en efectivo)
     private BigDecimal expectedCashTotal;       // Efectivo total esperado en caja = openingBalance + expectedCashAmount
     private BigDecimal expectedTransferAmount;  // Transferencias esperadas
