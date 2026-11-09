@@ -9,6 +9,11 @@ import java.util.List;
 
 public interface SupplierPaymentService {
     SupplierPaymentDto create(SupplierPaymentDto dto, MultipartFile support) throws IOException;
+
+    /**
+     * Valida los datos de un pago sin guardarlo (lanza FieldsException si hay errores).
+     */
+    void validatePayment(SupplierPaymentDto dto);
     List<SupplierPaymentDto> list(String supplierId, LocalDate from, LocalDate to,
                                    String status, Boolean unlinkedOnly, String bankAccountId);
     byte[] getSupport(String id) throws IOException;

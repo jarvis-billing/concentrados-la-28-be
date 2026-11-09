@@ -1,7 +1,12 @@
 package com.co.jarvis.service.impl;
 
+import java.util.ArrayList;
+import com.co.jarvis.service.PurchasePaymentService;
+import com.co.jarvis.dto.PaymentAllocationDto;
 import com.co.jarvis.dto.SupplierPaymentDto;
 import com.co.jarvis.entity.SupplierPayment;
+import com.co.jarvis.entity.PaymentApplication;
+import com.co.jarvis.entity.PurchaseInvoice;
 import com.co.jarvis.enums.EPaymentMethod;
 import com.co.jarvis.repository.BankAccountRepository;
 import com.co.jarvis.repository.SupplierPaymentRepository;
@@ -29,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@lombok.extern.slf4j.Slf4j
 @Service
 public class SupplierPaymentServiceImpl implements SupplierPaymentService {
 
@@ -44,6 +50,9 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
     @Autowired
     private MongoTemplate mongoTemplate;
 
+    @Autowired
+    private PurchasePaymentService purchasePaymentService;
+
     private final GenericMapper<SupplierPayment, SupplierPaymentDto> mapper =
             new GenericMapper<>(SupplierPayment.class, SupplierPaymentDto.class);
 
@@ -51,11 +60,24 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
     public SupplierPaymentDto create(SupplierPaymentDto dto, MultipartFile support) throws IOException {
         validate(dto, support);
 
+        // Validar las facturas a las que se aplica antes de guardar nada
+        List<PaymentAllocationDto> allocations = dto.getAllocations() != null
+                ? dto.getAllocations().stream()
+                    .filter(a -> a.getAmount() != null && a.getAmount().compareTo(BigDecimal.ZERO) > 0)
+                    .toList()
+                : List.of();
+        if (!allocations.isEmpty()) {
+            purchasePaymentService.validateAllocations(dto.getSupplierId(), dto.getAmount(), allocations);
+        }
+        dto.setAllocations(null);
+        dto.setApplications(null);
+
         SupplierPayment entity = mapper.mapToEntity(dto);
         entity.setId(UUID.randomUUID().toString());
 
         // Campos de vinculación — inicializar siempre en alta
         entity.setStatus("ADELANTO");
+        entity.setApplications(new ArrayList<>());
         entity.setAppliedAmount(BigDecimal.ZERO);
         entity.setRemainingAmount(entity.getAmount());
         entity.setLinkedPurchaseId(null);
@@ -81,7 +103,17 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
         }
 
         SupplierPayment saved = repository.save(entity);
+
+        if (!allocations.isEmpty()) {
+            purchasePaymentService.allocatePayment(saved.getId(), allocations, null);
+            saved = repository.findById(saved.getId()).orElse(saved);
+        }
         return mapper.mapToDto(saved);
+    }
+
+    @Override
+    public void validatePayment(SupplierPaymentDto dto) {
+        validate(dto, null);
     }
 
     @Override
@@ -97,7 +129,10 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
             LocalDate adjustedTo = from.equals(to) ? to : to.plusDays(1);
             query.addCriteria(Criteria.where("paymentDate").gte(adjustedFrom).lte(adjustedTo));
         }
-        if (StringUtils.hasText(status)) {
+        if ("CORTE".equals(status)) {
+            // Pagos cerrados por el script de corte
+            query.addCriteria(Criteria.where("legacyClosed").is(true));
+        } else if (isValidParam(status)) {
             query.addCriteria(Criteria.where("status").is(status));
         } else if (Boolean.TRUE.equals(unlinkedOnly)) {
             query.addCriteria(Criteria.where("status").in("ADELANTO", "PARCIAL"));
@@ -108,7 +143,61 @@ public class SupplierPaymentServiceImpl implements SupplierPaymentService {
         query.with(Sort.by(Sort.Direction.DESC, "paymentDate"));
 
         List<SupplierPayment> result = mongoTemplate.find(query, SupplierPayment.class);
-        return mapper.mapToDtoList(result);
+        List<SupplierPaymentDto> dtos = mapper.mapToDtoList(result);
+        try {
+            enrichApplications(dtos);
+        } catch (Exception e) {
+            // El enriquecimiento es informativo: nunca debe impedir listar los pagos
+            log.warn("No se pudo completar la información de facturas de los pagos: {}", e.getMessage(), e);
+        }
+        return dtos;
+    }
+
+    /**
+     * Completa la información de facturas de cada pago para el reporte:
+     * - pagos antiguos vinculados solo con linkedPurchaseId → se arma la aplicación
+     * - número y estado de pago actual de cada factura aplicada
+     */
+    private void enrichApplications(List<SupplierPaymentDto> dtos) {
+        for (SupplierPaymentDto dto : dtos) {
+            if (dto.getApplications() == null) {
+                dto.setApplications(new ArrayList<>());
+            }
+            if (dto.getApplications().isEmpty() && StringUtils.hasText(dto.getLinkedPurchaseId())
+                    && !"ANULADO".equals(dto.getStatus())) {
+                BigDecimal applied = dto.getAppliedAmount() != null && dto.getAppliedAmount().signum() > 0
+                        ? dto.getAppliedAmount() : dto.getAmount();
+                dto.getApplications().add(PaymentApplication.builder()
+                        .purchaseId(dto.getLinkedPurchaseId())
+                        .amount(applied)
+                        .build());
+            }
+        }
+
+        java.util.Set<String> purchaseIds = dtos.stream()
+                .flatMap(d -> d.getApplications().stream())
+                .map(PaymentApplication::getPurchaseId)
+                .filter(StringUtils::hasText)
+                .collect(java.util.stream.Collectors.toSet());
+        if (purchaseIds.isEmpty()) return;
+
+        Query q = new Query(Criteria.where("_id").in(purchaseIds));
+        q.fields().include("invoiceNumber").include("paymentStatus");
+        Map<String, PurchaseInvoice> invoices = new java.util.HashMap<>();
+        for (PurchaseInvoice inv : mongoTemplate.find(q, PurchaseInvoice.class)) {
+            invoices.put(inv.getId(), inv);
+        }
+
+        for (SupplierPaymentDto dto : dtos) {
+            for (PaymentApplication ap : dto.getApplications()) {
+                PurchaseInvoice inv = invoices.get(ap.getPurchaseId());
+                if (inv == null) continue;
+                if (!StringUtils.hasText(ap.getInvoiceNumber())) {
+                    ap.setInvoiceNumber(inv.getInvoiceNumber());
+                }
+                ap.setInvoicePaymentStatus(inv.getPaymentStatus());
+            }
+        }
     }
 
     @Override

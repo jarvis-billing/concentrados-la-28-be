@@ -1,5 +1,15 @@
 package com.co.jarvis.service.impl;
 
+import java.time.ZoneId;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.http.HttpStatus;
+import com.co.jarvis.util.exception.FieldsException;
+import com.co.jarvis.service.SupplierPaymentService;
+import com.co.jarvis.service.PurchasePaymentService;
+import com.co.jarvis.enums.EPaymentType;
+import com.co.jarvis.entity.SupplierPayment;
+import com.co.jarvis.dto.PaymentAllocationDto;
+import com.co.jarvis.dto.SupplierPaymentDto;
 import com.co.jarvis.dto.BulkLastCostItem;
 import com.co.jarvis.dto.CostSource;
 import com.co.jarvis.dto.PagedResponse;
@@ -64,6 +74,12 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
 
     @Autowired
     private MongoTemplate mongoTemplate;
+
+    @Autowired
+    private PurchasePaymentService purchasePaymentService;
+
+    @Autowired
+    private SupplierPaymentService supplierPaymentService;
 
     GenericMapper<PurchaseInvoice, PurchaseInvoiceDto> mapper = 
         new GenericMapper<>(PurchaseInvoice.class, PurchaseInvoiceDto.class);
@@ -192,6 +208,12 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             // Validaciones básicas
             validatePurchaseInvoice(dto);
 
+            // Pago de la factura (solo entrada): se separa antes de mapear la entidad
+            SupplierPaymentDto newPayment = dto.getNewPayment();
+            List<String> advanceIds = dto.getAdvancePaymentIds() != null ? dto.getAdvancePaymentIds() : List.of();
+            dto.setNewPayment(null);
+            dto.setAdvancePaymentIds(null);
+
             // Mapear DTO a entidad
             PurchaseInvoice invoice = mapper.mapToEntity(dto);
 
@@ -213,15 +235,25 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
                 invoice.setTotalAmount(calculateTotal(invoice.getItems()));
             }
 
+            // Validar el pago antes de guardar nada
+            validateInvoicePayment(invoice, newPayment, advanceIds);
+
             // Guardar factura de compra
             invoice = purchaseInvoiceRepository.save(invoice);
 
             // Actualizar stock de productos
             updateStockForCreation(invoice.getItems());
 
-            log.info("PurchaseInvoiceServiceImpl -> create -> Factura creada con ID: {}", invoice.getId());
+            // Aplicar anticipos y registrar el pago nuevo
+            invoice = registerInvoicePayment(invoice, newPayment, advanceIds);
+
+            log.info("PurchaseInvoiceServiceImpl -> create -> Factura creada con ID: {}, pago: {}",
+                    invoice.getId(), invoice.getPaymentStatus());
             return mapper.mapToDto(invoice);
 
+        } catch (ResponseStatusException | FieldsException e) {
+            log.error("PurchaseInvoiceServiceImpl -> create -> ERROR: {}", e.getMessage());
+            throw e;
         } catch (ResourceNotFoundException e) {
             log.error("PurchaseInvoiceServiceImpl -> create -> ERROR: {}", e.getMessage());
             throw e;
@@ -260,6 +292,11 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             if (updatedInvoice.getTotalAmount() == null) {
                 updatedInvoice.setTotalAmount(calculateTotal(updatedInvoice.getItems()));
             }
+
+            // Los pagos vinculados no se editan desde aquí: conservarlos y recalcular el estado
+            updatedInvoice.setLinkedPayments(originalInvoice.getLinkedPayments());
+            updatedInvoice.setLegacyPaidAmount(originalInvoice.getLegacyPaidAmount());
+            purchasePaymentService.refreshPaymentStatus(updatedInvoice);
 
             // Guardar factura actualizada
             updatedInvoice = purchaseInvoiceRepository.save(updatedInvoice);
@@ -328,8 +365,9 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             // Recalcular vatAmount, distribuir flete y calcular unitTotalCost para TODOS los items
             calculateItemCosts(invoice);
 
-            // Recalcular totales de la factura
+            // Recalcular totales de la factura y su estado de pago (el total cambió)
             recalculateInvoiceTotals(invoice);
+            purchasePaymentService.refreshPaymentStatus(invoice);
             invoice.setUpdatedAt(OffsetDateTime.now());
 
             // Guardar la factura actualizada
@@ -352,6 +390,80 @@ public class PurchaseInvoiceServiceImpl implements PurchaseInvoiceService {
             log.error("PurchaseInvoiceServiceImpl -> addItems -> ERROR: {}", e.getMessage());
             throw new SaveRecordException("Error al agregar items a la factura: " + e.getMessage());
         }
+    }
+
+    /**
+     * Valida el pago de una factura nueva: anticipos disponibles del proveedor y pago nuevo.
+     * Una factura de contado debe quedar pagada completamente.
+     */
+    private void validateInvoicePayment(PurchaseInvoice invoice, SupplierPaymentDto newPayment, List<String> advanceIds) {
+        String supplierId = invoice.getSupplier() != null ? invoice.getSupplier().getId() : null;
+        BigDecimal total = invoice.getTotalAmount() != null ? invoice.getTotalAmount() : BigDecimal.ZERO;
+
+        BigDecimal advanceTotal = BigDecimal.ZERO;
+        if (!advanceIds.isEmpty()) {
+            Map<String, SupplierPayment> available = purchasePaymentService.findUnlinkedBySupplier(supplierId).stream()
+                    .collect(Collectors.toMap(SupplierPayment::getId, p -> p));
+            for (String advanceId : advanceIds) {
+                SupplierPayment advance = available.get(advanceId);
+                if (advance == null) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "El anticipo seleccionado ya no está disponible para este proveedor");
+                }
+                advanceTotal = advanceTotal.add(advance.getRemainingAmount() != null
+                        ? advance.getRemainingAmount() : advance.getAmount());
+            }
+        }
+
+        BigDecimal newAmount = BigDecimal.ZERO;
+        if (newPayment != null) {
+            newPayment.setSupplierId(supplierId);
+            newPayment.setSupplierName(invoice.getSupplier().getName());
+            if (newPayment.getPaymentDate() == null) {
+                newPayment.setPaymentDate(LocalDate.now(ZoneId.of("America/Bogota")));
+            }
+            supplierPaymentService.validatePayment(newPayment);
+            newAmount = newPayment.getAmount();
+        }
+
+        if (invoice.getPaymentType() == EPaymentType.CONTADO) {
+            BigDecimal missing = total.subtract(advanceTotal).subtract(newAmount);
+            if (missing.compareTo(BigDecimal.ONE) > 0) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "La factura de contado debe quedar pagada. Falta registrar $" + missing.toPlainString());
+            }
+        }
+    }
+
+    /**
+     * Aplica los anticipos (más antiguos primero) y registra el pago nuevo aplicado a la factura.
+     * Lo que exceda el saldo de la factura queda como anticipo del proveedor.
+     */
+    private PurchaseInvoice registerInvoicePayment(PurchaseInvoice invoice, SupplierPaymentDto newPayment,
+                                                   List<String> advanceIds) throws java.io.IOException {
+        if (!advanceIds.isEmpty()) {
+            purchasePaymentService.linkPayments(invoice.getId(), advanceIds, null);
+        }
+        if (newPayment != null) {
+            PurchaseInvoice current = purchaseInvoiceRepository.findById(invoice.getId()).orElse(invoice);
+            BigDecimal balance = current.getTotalAmount().subtract(
+                    current.getTotalPaid() != null ? current.getTotalPaid() : BigDecimal.ZERO);
+            BigDecimal toApply = newPayment.getAmount().min(balance);
+            if (toApply.compareTo(BigDecimal.ZERO) > 0) {
+                newPayment.setAllocations(List.of(PaymentAllocationDto.builder()
+                        .purchaseId(invoice.getId())
+                        .amount(toApply)
+                        .build()));
+            }
+            if (newPayment.getNotes() == null || newPayment.getNotes().isBlank()) {
+                newPayment.setNotes("Pago factura de compra " + invoice.getInvoiceNumber());
+            }
+            supplierPaymentService.create(newPayment, null);
+        }
+        if (advanceIds.isEmpty() && newPayment == null) {
+            return invoice;
+        }
+        return purchaseInvoiceRepository.findById(invoice.getId()).orElse(invoice);
     }
 
     /**

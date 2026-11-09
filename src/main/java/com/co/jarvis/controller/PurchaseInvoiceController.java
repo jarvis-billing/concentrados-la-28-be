@@ -226,6 +226,15 @@ public class PurchaseInvoiceController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * Facturas del proveedor pendientes de pago (PENDIENTE o PARCIAL), más antiguas primero.
+     */
+    @GetMapping("/pending")
+    public ResponseEntity<List<PurchaseInvoiceDto>> getPendingInvoices(@RequestParam String supplierId) {
+        logger.info("PurchaseInvoiceController -> getPendingInvoices: supplierId={}", supplierId);
+        return ResponseEntity.ok(purchasePaymentService.findPendingInvoices(supplierId));
+    }
+
     @GetMapping("/{id}/payments")
     public ResponseEntity<PurchasePaymentDetailResponse> getLinkedPayments(@PathVariable String id) {
         logger.info("PurchaseInvoiceController -> getLinkedPayments: purchaseId={}", id);

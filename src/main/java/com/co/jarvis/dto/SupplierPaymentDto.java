@@ -30,4 +30,13 @@ public class SupplierPaymentDto implements Serializable {
     private String linkedPurchaseId;
     private java.math.BigDecimal appliedAmount;
     private java.math.BigDecimal remainingAmount;
+    private java.util.List<com.co.jarvis.entity.PaymentApplication> applications;
+    /** true si el pago fue cerrado por el script de corte sin factura asociada */
+    private Boolean legacyClosed;
+
+    /**
+     * Solo entrada: facturas a las que se aplica el pago al registrarlo.
+     * Si viene vacío, el pago queda completo como anticipo.
+     */
+    private java.util.List<PaymentAllocationDto> allocations;
 }

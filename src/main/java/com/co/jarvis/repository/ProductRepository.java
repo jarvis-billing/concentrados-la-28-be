@@ -16,10 +16,13 @@ public interface ProductRepository extends MongoRepository<Product, String> {
 
     Page<Product> findAll(Pageable pageable);
 
-    @Query("{ $or: [ { 'presentations.barcode': { $regex: ?0, $options: 'i' } }, { 'description': { $regex: ?1, $options: 'i' } } ] }")
+    @Query("{ $or: [ { 'presentations.barcode': { $regex: ?0, $options: 'i' } }, { 'presentations.supplier_code': { $regex: ?0, $options: 'i' } }, { 'description': { $regex: ?1, $options: 'i' } } ] }")
     Page<Product> findByPresentationsBarcodeOrDescriptionContainingIgnoreCase(String barcode, String description, Pageable pageable);
 
     Product findFirstByPresentationsBarcode(String barcode);
+
+    @Query("{ 'presentations.supplier_code': ?0 }")
+    List<Product> findByPresentationsSupplierCode(String supplierCode);
 
     @Aggregation(pipeline = {
             "{ $unwind: '$presentations' }",

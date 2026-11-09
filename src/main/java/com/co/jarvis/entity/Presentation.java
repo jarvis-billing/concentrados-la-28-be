@@ -28,6 +28,13 @@ public class Presentation {
     private String barcode;
     @Field("product_code")
     private String productCode;
+    /**
+     * Código con el que el proveedor identifica esta presentación (ej. el bulto completo
+     * en productos por peso). Se guarda en mayúsculas y es único entre todos los productos.
+     */
+    @Field("supplier_code")
+    private String supplierCode;
+
     private String label;
     @Field("sale_price")
     private BigDecimal salePrice;

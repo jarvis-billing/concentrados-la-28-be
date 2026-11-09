@@ -38,4 +38,15 @@ public class PurchaseInvoiceDto implements Serializable {
     private String paymentStatus;
     private BigDecimal totalPaid;
     private List<LinkedPayment> linkedPayments;
+
+    /**
+     * Solo entrada (al crear): pago nuevo que se registra junto con la factura.
+     * Obligatorio en facturas de contado si los anticipos no cubren el total.
+     */
+    private SupplierPaymentDto newPayment;
+
+    /**
+     * Solo entrada (al crear): anticipos del proveedor que se aplican a la factura.
+     */
+    private List<String> advancePaymentIds;
 }

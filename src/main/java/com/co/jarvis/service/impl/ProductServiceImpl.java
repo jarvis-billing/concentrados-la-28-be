@@ -1,5 +1,7 @@
 package com.co.jarvis.service.impl;
 
+import java.util.HashSet;
+import java.util.Set;
 import com.co.jarvis.dto.BulkPresentationPriceUpdateRequest;
 import com.co.jarvis.dto.BulkPresentationPriceUpdateResponse;
 import com.co.jarvis.dto.BulkUpdateError;
@@ -408,6 +410,7 @@ public class ProductServiceImpl implements ProductService {
 
             Product product = mapper.mapToEntity(dto);
             ensurePresentationIds(product);
+            normalizeAndValidateSupplierCodes(product);
             product = repository.save(product);
             return enrichProductDto(product);
         } catch (DuplicateRecordException e) {
@@ -489,6 +492,7 @@ public class ProductServiceImpl implements ProductService {
                 }
             });
             product.setPresentations(presentations);
+            normalizeAndValidateSupplierCodes(product);
             log.info("Presentaciones reemplazadas: {} en total", presentations.size());
             presentations.forEach(p ->
                     log.info("  -> id={}, barcode={}, label={}", p.getId(), p.getBarcode(), p.getLabel()));
@@ -539,12 +543,45 @@ public class ProductServiceImpl implements ProductService {
         if (patch.getIsBulk()       != null) target.setIsBulk(patch.getIsBulk());
         if (patch.getIsFixedAmount()!= null) target.setIsFixedAmount(patch.getIsFixedAmount());
         if (patch.getFixedAmount()  != null) target.setFixedAmount(patch.getFixedAmount());
+        if (patch.getSupplierCode() != null) target.setSupplierCode(patch.getSupplierCode());
+        normalizeAndValidateSupplierCodes(product);
 
         log.info("Presentación {} actualizada: barcode={}, label={}, salePrice={}",
                 presentationId, target.getBarcode(), target.getLabel(), target.getSalePrice());
 
         product = repository.save(product);
         return enrichProductDto(product);
+    }
+
+    /**
+     * Normaliza el código de proveedor de cada presentación (trim + mayúsculas, vacío = null)
+     * y valida que no se repita dentro del producto ni en otro producto.
+     */
+    private void normalizeAndValidateSupplierCodes(Product product) {
+        if (product.getPresentations() == null) return;
+        Set<String> seen = new HashSet<>();
+        for (Presentation p : product.getPresentations()) {
+            String code = p.getSupplierCode() != null ? p.getSupplierCode().trim().toUpperCase() : null;
+            if (code == null || code.isEmpty()) {
+                p.setSupplierCode(null);
+                continue;
+            }
+            p.setSupplierCode(code);
+            if (!seen.add(code)) {
+                throw new DuplicateRecordException(format(
+                        "El código de proveedor %s está repetido en varias presentaciones del producto", code));
+            }
+            for (Product other : repository.findByPresentationsSupplierCode(code)) {
+                if (Objects.equals(other.getId(), product.getId())) continue;
+                String otherLabel = other.getPresentations().stream()
+                        .filter(op -> code.equals(op.getSupplierCode()))
+                        .map(Presentation::getLabel)
+                        .findFirst().orElse("N/A");
+                throw new DuplicateRecordException(format(
+                        "El código de proveedor %s ya está asignado al producto: %s en la presentación: %s",
+                        code, other.getDescription(), otherLabel));
+            }
+        }
     }
 
     /** Garantiza que cada presentación tenga un ID único antes de persistir. */

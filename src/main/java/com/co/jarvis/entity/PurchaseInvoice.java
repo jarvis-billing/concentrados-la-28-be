@@ -79,6 +79,12 @@ public class PurchaseInvoice {
     @Builder.Default
     private BigDecimal totalPaid = BigDecimal.ZERO;
 
+    /**
+     * Monto que se dio por pagado al arrancar la vinculación pago-factura
+     * (script de corte). Se suma a los pagos vinculados al calcular total_paid.
+     */
+    @Field("legacy_paid_amount")
+    private BigDecimal legacyPaidAmount;
     @Field("linked_payments")
     @Builder.Default
     private List<LinkedPayment> linkedPayments = new ArrayList<>();
